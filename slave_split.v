@@ -29,7 +29,7 @@
 module slave_split #(
     parameter ADDR_W      = 12,
     parameter DATA_W      = 8,
-    parameter WAIT_CYCLES = 5
+    parameter WAIT_CYCLES = 10
 )(
     input wire clk,
     input wire rst,

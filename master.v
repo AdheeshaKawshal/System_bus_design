@@ -20,6 +20,7 @@ module master #(
 
     input wire [DATA_W-1:0] rdata_i,
     input wire ready_i,
+    input wire ext_valid_o,
     input wire rvalid_i   // pulses high alongside rdata_i when the slave's read data is valid
 );
     // FSM states
@@ -115,7 +116,13 @@ module master #(
                         req_o   <= 1'b0;
                         valid_o <= 1'b0;
                         state   <= IDLE;
-                    end else begin
+                    end 
+                    else if(ext_valid_o) begin
+                        // capture read data only once the slave flags it valid
+                       
+                    end
+                    
+                    else begin
                         // keep driving valid and data until slave signals ready
                         addr_o  <= {addr_mem[tx_ptr], we_mem[tx_ptr]};
                         wdata_o <= wdata_mem[tx_ptr];

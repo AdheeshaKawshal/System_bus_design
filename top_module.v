@@ -36,7 +36,8 @@ module top_module (
         .valid_o (valid_o_M0),
         .rdata_i (rdata_i_M0),
         .ready_i (ready_i_M0),
-        .rvalid_i(rvalid_i_M0)
+        .rvalid_i(rvalid_i_M0),
+        .ext_valid_o(ext_valid_o)
     );
 
     // ---------------------------------------------------------
@@ -64,7 +65,8 @@ module top_module (
         .valid_o (valid_o_M1),
         .rdata_i (rdata_i_M1),
         .ready_i (ready_i_M1),
-        .rvalid_i(rvalid_i_M1)
+        .rvalid_i(rvalid_i_M1),
+        .ext_valid_o(ext_valid_o)
     );
 
     // ---------------------------------------------------------

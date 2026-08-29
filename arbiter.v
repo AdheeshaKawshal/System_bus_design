@@ -11,16 +11,10 @@ module arbiter (
     output reg grant_M0,
     output reg grant_M1,
 
-    // Mux control: which master currently owns the shared addr/data bus.
-    // 0 = M0, 1 = M1.
     output reg addr_sel,
     output reg data_sel,
     output reg ctr_sel,
 
-    // Which master is currently split-parked (0=M0, 1=M1). Only meaningful
-    // while parked (PARKED_IDLE/PARKED_BUSY); the system bus uses this to
-    // route a split slave's resume pulse straight to the parked master
-    // even if it hasn't been re-granted the bus yet that same cycle.
     output reg parked_id
 );
     // ---------------------------------------------------------
