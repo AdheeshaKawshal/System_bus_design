@@ -12,7 +12,8 @@ module slave #(
     input wire [DATA_W-1:0]     wdata_i,
 
     output reg [DATA_W-1:0]     rdata_o,  // data back to master on a read
-    output reg                  ready_o   // pulses when the transaction is done
+    output reg                  ready_o,  // pulses when the transaction (write or read) is done
+    output reg                  rvalid_o  // pulses when rdata_o holds valid read data
 );
 
     reg [DATA_W-1:0] mem [0:(1<<ADDR_W)-1];
@@ -21,16 +22,20 @@ module slave #(
 
     always @(posedge clk or negedge rst) begin
         if (!rst) begin
-            rdata_o <= {DATA_W{1'b0}};
-            ready_o <= 1'b0;
+            rdata_o  <= {DATA_W{1'b0}};
+            ready_o  <= 1'b0;
+            rvalid_o <= 1'b0;
         end else begin
-            ready_o <= 1'b0;
-
+            ready_o  <= 1'b0;
+            rvalid_o <= 1'b0;
+            // Write only happens once the master has driven a valid,
+            // selected transaction (sel = cs_i && valid_i) on this edge.
             if (sel) begin
                 if (we_i) begin
                     mem[addr_i] <= wdata_i;
                 end else begin
-                    rdata_o <= mem[addr_i];
+                    rdata_o  <= mem[addr_i];
+                    rvalid_o <= 1'b1;
                 end
                 ready_o <= 1'b1;
             end

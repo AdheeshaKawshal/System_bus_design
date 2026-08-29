@@ -1,6 +1,8 @@
 module master #(
     parameter ADDR_W = 15,
-    parameter DATA_W = 8
+    parameter DATA_W = 8,
+    parameter RW      = 1,
+    parameter NUM_TXN  = 8
 )(
     input wire clk,
     input wire rst,
@@ -9,50 +11,115 @@ module master #(
     output reg req_o,
     input wire grant_i,
 
-    // Bus interface (driven only while granted)
-    output reg [ADDR_W-1:0] addr_o,
-    output reg [DATA_W-1:0] wdata_o,
-    output reg we_o,
-    output reg valid_o,
+    // Bus interface (driven only while granted).
+    // addr_o carries {address, we} packed together (we in the LSB), ready
+    // to connect straight to the bus's addr_Mx port with no wrapping needed.
+    output reg [ADDR_W+RW-1:0] addr_o,
+    output reg [DATA_W-1:0]    wdata_o,
+    output reg                 valid_o,
 
     input wire [DATA_W-1:0] rdata_i,
-    input wire ready_i
+    input wire ready_i,
+    input wire rvalid_i   // pulses high alongside rdata_i when the slave's read data is valid
 );
+    // FSM states
+    localparam IDLE    = 3'd0,
+               REQUEST = 3'd1,
+               ACTIVE  = 3'd2;
 
-    localparam IDLE    = 2'd0,
-               REQUEST = 2'd1,
-               ACTIVE  = 2'd2;
+    reg [2:0] state;
 
-    reg [1:0] state;
+    // Transaction memory: type (we), addr, wdata and space to store read results
+    reg [DATA_W-1:0] wdata_mem [0:NUM_TXN-1];
+    reg [ADDR_W-1:0] addr_mem  [0:NUM_TXN-1];
+    reg              we_mem    [0:NUM_TXN-1];
+    reg [DATA_W-1:0] rdata_mem [0:NUM_TXN-1];
 
+    // current transaction pointer and count
+    reg [$clog2(NUM_TXN)-1:0] tx_ptr;
+    integer i;
+
+    // On reset populate a simple transaction table (can be customized for simulation)
     always @(posedge clk or negedge rst) begin
         if (!rst) begin
             state   <= IDLE;
             req_o   <= 1'b0;
             valid_o <= 1'b0;
-            addr_o  <= {ADDR_W{1'b0}};
+            addr_o  <= {(ADDR_W+RW){1'b0}};
             wdata_o <= {DATA_W{1'b0}};
-            we_o    <= 1'b0;
+            tx_ptr  <= 0;
+            for (i = 0; i < NUM_TXN; i = i + 1) begin
+                addr_mem[i]  <= {ADDR_W{1'b0}};
+                wdata_mem[i] <= {DATA_W{1'b0}};
+                we_mem[i]    <= 1'b0;
+                rdata_mem[i] <= {DATA_W{1'b0}};
+            end
+
+            // Example transaction sequence (modify as needed).
+            // addr_o encoding (matches addr_decoder): [14]=0 internal, [13:12]=slave sel, [11:0]=slave addr
+            //   slave1 -> sel 00 -> addr_mem[13:12]=00 (e.g. 15'h0xxx)
+            //   slave2 -> sel 01 -> addr_mem[13:12]=01 (e.g. 15'h1xxx)
+            //
+            // 0: write slave1 addr 0x001 <- 0x11
+            // 1: read  slave1 addr 0x001
+            // 2: write slave1 addr 0x005 <- 0x22
+            // 3: read  slave1 addr 0x005
+            // 4: write slave2 addr 0x001 <- 0x33
+            // 5: read  slave2 addr 0x001
+            // 6: write slave2 addr 0x008 <- 0x44
+            // 7: read  slave2 addr 0x008
+            addr_mem[0]  <= 15'h2001; wdata_mem[0] <= 8'h11; we_mem[0] <= 1'b1;
+            addr_mem[1]  <= 15'h2001; wdata_mem[1] <= {DATA_W{1'b0}}; we_mem[1] <= 1'b0;
+            addr_mem[2]  <= 15'h0005; wdata_mem[2] <= 8'h22; we_mem[2] <= 1'b1;
+            addr_mem[3]  <= 15'h0005; wdata_mem[3] <= {DATA_W{1'b0}}; we_mem[3] <= 1'b0;
+            addr_mem[4]  <= 15'h1001; wdata_mem[4] <= 8'h33; we_mem[4] <= 1'b1;
+            addr_mem[5]  <= 15'h1001; wdata_mem[5] <= {DATA_W{1'b0}}; we_mem[5] <= 1'b0;
+            addr_mem[6]  <= 15'h1008; wdata_mem[6] <= 8'h44; we_mem[6] <= 1'b1;
+            addr_mem[7]  <= 15'h1008; wdata_mem[7] <= {DATA_W{1'b0}}; we_mem[7] <= 1'b0;
+
         end else begin
             case (state)
                 IDLE: begin
-                    // TODO: replace with real trigger condition
-                    state <= REQUEST;
-                    req_o <= 1'b1;
+                    // If there are remaining transactions, request the bus
+                    if (tx_ptr < NUM_TXN) begin
+                        req_o <= 1'b1;
+                        state <= REQUEST;
+                    end else begin
+                        // no more transactions: stay idle and keep outputs low
+                        req_o   <= 1'b0;
+                        valid_o <= 1'b0;
+                    end
                 end
 
                 REQUEST: begin
+                    // drive request until grant is received
                     if (grant_i) begin
-                        state   <= ACTIVE;
+                        // drive transaction signals from memory (we packed into addr_o's LSB)
+                        addr_o  <= {addr_mem[tx_ptr], we_mem[tx_ptr]};
+                        wdata_o <= wdata_mem[tx_ptr];
                         valid_o <= 1'b1;
+                        state   <= ACTIVE;
                     end
                 end
 
                 ACTIVE: begin
+                    // Keep valid asserted while waiting for slave ready
                     if (ready_i) begin
-                        state   <= IDLE;
+                        // capture read data only once the slave flags it valid
+                        if (!we_mem[tx_ptr] && rvalid_i) begin
+                            rdata_mem[tx_ptr] <= rdata_i;
+                        end
+
+                        // transaction complete: advance pointer and release bus
+                        tx_ptr  <= tx_ptr + 1;
                         req_o   <= 1'b0;
                         valid_o <= 1'b0;
+                        state   <= IDLE;
+                    end else begin
+                        // keep driving valid and data until slave signals ready
+                        addr_o  <= {addr_mem[tx_ptr], we_mem[tx_ptr]};
+                        wdata_o <= wdata_mem[tx_ptr];
+                        valid_o <= 1'b1;
                     end
                 end
 

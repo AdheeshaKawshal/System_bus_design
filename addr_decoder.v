@@ -23,7 +23,7 @@ module addr_decoder #(
     localparam SEL_W = 2;
 
     wire  is_internal            = !addr_i[ADDR_LINE_W-1];
-    wire [SEL_W-1:0] sel         = addr_i[ADDR_LINE_W-2 : ADDR_LINE_W-2-SEL_W];
+    wire [SEL_W-1:0] sel         = addr_i[ADDR_LINE_W-2 -: SEL_W];
 
     reg [NUM_SLAVES-1:0] slave_sel;
 
@@ -32,13 +32,13 @@ module addr_decoder #(
         ext_valid_o = 1'b0;
         addr_invalid = 1'b0;
         slave_sel   = {NUM_SLAVES{1'b0}};
+        we          = 1'b0;
+        addr_o      = {(ADDR_LINE_W-3){1'b0}};
 
         if (valid_i) begin
             if (is_internal) begin
-                we = addr_i[0]; // LSB of addr_i indicates read/write
-                slave_sel1 = slave_sel[0];
-                slave_sel2 = slave_sel[1];
-                slave_sel3 = slave_sel[2];
+                we     = addr_i[0]; // LSB of addr_i indicates read/write
+                addr_o = addr_i[ADDR_LINE_W-4:1];
                 case (sel)
                     2'b00:   slave_sel = 3'b001;
                     2'b01:   slave_sel = 3'b010;
@@ -51,6 +51,10 @@ module addr_decoder #(
                 ext_valid_o = 1'b1;
             end
         end
+
+        slave_sel1 = slave_sel[0];
+        slave_sel2 = slave_sel[1];
+        slave_sel3 = slave_sel[2];
     end
 
 endmodule
