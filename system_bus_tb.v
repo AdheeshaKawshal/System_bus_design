@@ -5,9 +5,24 @@ module system_bus_tb;
     reg clk;
     reg rst;
 
+    // No external bus modeled in this testbench: never grant it, and
+    // leave its return-data lines quiet.
+    wire req_ext;
+    wire [15:0] addr_ext_o;
+    wire [7:0]  wdata_ext_o;
+    wire        ext_valid_o;
+
     top_module top (
-        .clk(clk),
-        .rst(rst)
+        .clk         (clk),
+        .rst         (rst),
+        .req_ext     (req_ext),
+        .grant_ext   (1'b0),
+        .addr_ext_o  (addr_ext_o),
+        .wdata_ext_o (wdata_ext_o),
+        .ext_valid_o (ext_valid_o),
+        .rdata_ext_i (8'h0),
+        .ready_ext_i (1'b0),
+        .rvalid_ext_i(1'b0)
     );
 
     // clock

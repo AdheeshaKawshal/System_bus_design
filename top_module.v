@@ -1,6 +1,19 @@
 module top_module (
     input wire clk,
-    input wire rst
+    input wire rst,
+
+    // External bus interface: lets this design act as a master on
+    // another bus (arbiter + slave side live outside this design).
+    output wire req_ext,
+    input  wire grant_ext,
+
+    output wire [15:0] addr_ext_o,     // {addr, we}, ADDR_W+RW wide
+    output wire [7:0]  wdata_ext_o,
+    output wire        ext_valid_o,
+
+    input  wire [7:0]  rdata_ext_i,
+    input  wire        ready_ext_i,
+    input  wire        rvalid_ext_i
 );
 
     localparam ADDR_W = 15;   // {internal_flag(1), slave_sel(2), slave_addr(12)}
@@ -23,9 +36,10 @@ module top_module (
     wire                  rvalid_i_M0;
 
     master #(
-        .ADDR_W (ADDR_W),
-        .DATA_W (DATA_W),
-        .RW     (RW)
+        .ADDR_W    (ADDR_W),
+        .DATA_W    (DATA_W),
+        .RW        (RW),
+        .REQ_DELAY (4)
     ) u_master0 (
         .clk     (clk),
         .rst     (rst),
@@ -52,9 +66,10 @@ module top_module (
     wire                  rvalid_i_M1;
 
     master #(
-        .ADDR_W (ADDR_W),
-        .DATA_W (DATA_W),
-        .RW     (RW)
+        .ADDR_W    (ADDR_W),
+        .DATA_W    (DATA_W),
+        .RW        (RW),
+        .REQ_DELAY (9)
     ) u_master1 (
         .clk     (clk),
         .rst     (rst),
@@ -81,8 +96,6 @@ module top_module (
     wire [DATA_W-1:0] rdata_slave;
     wire              ready_slave;
     wire              rvalid_slave;
-    wire [ADDR_W+RW-1:0] addr_ext_o;
-    wire                  ext_valid_o;
 
     system_bus #(
         .ADDR_W     (ADDR_W),
@@ -129,7 +142,15 @@ module top_module (
         .rvalid_slave (rvalid_slave),
 
         .addr_ext_o   (addr_ext_o),
-        .ext_valid_o  (ext_valid_o)
+        .wdata_ext_o  (wdata_ext_o),
+        .ext_valid_o  (ext_valid_o),
+
+        .rdata_ext_i  (rdata_ext_i),
+        .ready_ext_i  (ready_ext_i),
+        .rvalid_ext_i (rvalid_ext_i),
+
+        .req_ext      (req_ext),
+        .grant_ext    (grant_ext)
     );
 
     // ---------------------------------------------------------

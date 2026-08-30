@@ -2,7 +2,8 @@ module master #(
     parameter ADDR_W = 15,
     parameter DATA_W = 8,
     parameter RW      = 1,
-    parameter NUM_TXN  = 8
+    parameter NUM_TXN  = 8,
+    parameter REQ_DELAY = 0   // clock cycles to hold off after reset before req_o is ever asserted
 )(
     input wire clk,
     input wire rst,
@@ -24,11 +25,13 @@ module master #(
     input wire rvalid_i   // pulses high alongside rdata_i when the slave's read data is valid
 );
     // FSM states
-    localparam IDLE    = 3'd0,
-               REQUEST = 3'd1,
-               ACTIVE  = 3'd2;
+    localparam WAIT    = 3'd0,
+               IDLE    = 3'd1,
+               REQUEST = 3'd2,
+               ACTIVE  = 3'd3;
 
     reg [2:0] state;
+    reg [31:0] delay_cnt;
 
     // Transaction memory: type (we), addr, wdata and space to store read results
     reg [DATA_W-1:0] wdata_mem [0:NUM_TXN-1];
@@ -43,7 +46,8 @@ module master #(
     // On reset populate a simple transaction table (can be customized for simulation)
     always @(posedge clk or negedge rst) begin
         if (!rst) begin
-            state   <= IDLE;
+            state     <= WAIT;
+            delay_cnt <= 0;
             req_o   <= 1'b0;
             valid_o <= 1'b0;
             addr_o  <= {(ADDR_W+RW){1'b0}};
@@ -69,10 +73,10 @@ module master #(
             // 5: read  slave2 addr 0x001
             // 6: write slave2 addr 0x008 <- 0x44
             // 7: read  slave2 addr 0x008
-            addr_mem[0]  <= 15'h2001; wdata_mem[0] <= 8'h11; we_mem[0] <= 1'b1;
-            addr_mem[1]  <= 15'h2001; wdata_mem[1] <= {DATA_W{1'b0}}; we_mem[1] <= 1'b0;
-            addr_mem[2]  <= 15'h0005; wdata_mem[2] <= 8'h22; we_mem[2] <= 1'b1;
-            addr_mem[3]  <= 15'h0005; wdata_mem[3] <= {DATA_W{1'b0}}; we_mem[3] <= 1'b0;
+            addr_mem[0]  <= 15'h4001; wdata_mem[0] <= 8'h11; we_mem[0] <= 1'b1;
+            addr_mem[1]  <= 15'h4001; wdata_mem[1] <= {DATA_W{1'b0}}; we_mem[1] <= 1'b0;
+            addr_mem[2]  <= 15'h5005; wdata_mem[2] <= 8'h22; we_mem[2] <= 1'b1;
+            addr_mem[3]  <= 15'h5005; wdata_mem[3] <= {DATA_W{1'b0}}; we_mem[3] <= 1'b0;
             addr_mem[4]  <= 15'h1001; wdata_mem[4] <= 8'h33; we_mem[4] <= 1'b1;
             addr_mem[5]  <= 15'h1001; wdata_mem[5] <= {DATA_W{1'b0}}; we_mem[5] <= 1'b0;
             addr_mem[6]  <= 15'h1008; wdata_mem[6] <= 8'h44; we_mem[6] <= 1'b1;
@@ -80,6 +84,16 @@ module master #(
 
         end else begin
             case (state)
+                WAIT: begin
+                    // Hold off req_o until REQ_DELAY cycles have elapsed
+                    // since reset released.
+                    if (delay_cnt >= REQ_DELAY) begin
+                        state <= IDLE;
+                    end else begin
+                        delay_cnt <= delay_cnt + 1;
+                    end
+                end
+
                 IDLE: begin
                     // If there are remaining transactions, request the bus
                     if (tx_ptr < NUM_TXN) begin
