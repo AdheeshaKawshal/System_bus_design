@@ -61,8 +61,8 @@ module system_busv2 (
         .DATA_W    (DATA_W),
         .RW        (RW),
         .REQ_DELAY       (2),
-        .ACTIVE_TIMEOUT  (3),
-        .BACKOFF_DELAY   (10)
+        .ACTIVE_TIMEOUT  (20),
+        .BACKOFF_DELAY   (30)
     ) u_master0 (
         .clk     (clk),
         .rst     (rst),

@@ -8,10 +8,6 @@ module arbiter (
     input wire resume,
     input wire xfer_done,   // pulses when the transfer currently on the bus completes
 
-    // Fed back from addr_decoder: the address currently on the bus
-    // (belonging to cur_owner) falls outside this bus. Used to figure
-    // out, per master, whether its requests should route to the local
-    // bus or the external one.
     input wire ext_valid_i,
 
     output reg grant_M0,
@@ -60,10 +56,7 @@ module arbiter (
             ext_sel_M0     <= 1'b0;
             ext_sel_M1     <= 1'b0;
         end else begin
-            // While a master holds the grant, latch its routing flag from
-            // the live decode result. Once it loses the grant, drop back
-            // to 0 (internal) so its *next* request starts fresh instead
-            // of inheriting a stale decision from an unrelated transfer.
+            
             ext_sel_M0 <= grant_M0 ? ext_valid_i : 1'b0;
             ext_sel_M1 <= grant_M1 ? ext_valid_i : 1'b0;
 

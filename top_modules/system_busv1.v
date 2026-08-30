@@ -60,7 +60,7 @@ module system_busv1 (
         .ADDR_W    (ADDR_W),
         .DATA_W    (DATA_W),
         .RW        (RW),
-        .REQ_DELAY       (20),
+        .REQ_DELAY       (30),
         .ACTIVE_TIMEOUT  (16),
         .BACKOFF_DELAY   (5)
     ) u_master0 (

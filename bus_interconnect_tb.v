@@ -1,11 +1,10 @@
 `timescale 1ns / 1ps
-`include "bus_interconnect.v"
 module bus_interconnect_tb;
 
     reg clk;
     reg rst;
 
-    bus_interconnect dut (
+    bus_interconnect_serial dut (
         .clk (clk),
         .rst (rst)
     );
