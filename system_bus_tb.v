@@ -1,5 +1,4 @@
 `timescale 1ns / 1ps
-`include "top_module.v"
 module system_bus_tb;
 
     reg clk;
@@ -45,7 +44,7 @@ module system_bus_tb;
     always @(posedge clk) begin
         if (rst && top.u_system_bus.valid_bus && top.u_system_bus.ready_slave) begin
             $display("t=%0t  we=%b addr=%0h wdata=%0h rdata=%0h",
-                      $time, top.we_bus, top.addr_bus, top.wdata_bus, top.rdata_slave);
+                      $time, top.we_bus, top.addr_bus, top.wdata_bus, top.u_system_bus.rdata_slave);
         end
     end
 

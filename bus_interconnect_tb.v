@@ -25,7 +25,7 @@ module bus_interconnect_tb;
         // target address 0x2xxx, which decodes external on bus 1 and
         // crosses over to bus 2 as bus 1's Master 1 request.
 
-        #1200 $finish;
+        #700 $finish;
     end
 
     // Log every completed transfer on bus 1's own local slaves
@@ -33,17 +33,17 @@ module bus_interconnect_tb;
         if (rst && dut.u_bus1.u_system_bus.valid_bus && dut.u_bus1.u_system_bus.ready_slave) begin
             $display("t=%0t  BUS1  we=%b addr=%0h wdata=%0h rdata=%0h",
                       $time, dut.u_bus1.we_bus, dut.u_bus1.addr_bus,
-                      dut.u_bus1.wdata_bus, dut.u_bus1.rdata_slave);
+                      dut.u_bus1.wdata_bus, dut.u_bus1.u_system_bus.rdata_slave);
         end
     end
 
     // Log every completed transfer on bus 2 (Master 0 local, or Master 1
-    // = bus 1 crossing over through its ext_* port)
+    // = bus 1 wired straight into bus 2's exposed Master 1 slot)
     always @(posedge clk) begin
-        if (rst && dut.u_system_bus2.valid_bus && dut.u_system_bus2.ready_slave) begin
+        if (rst && dut.u_bus2.u_system_bus.valid_bus && dut.u_bus2.u_system_bus.ready_slave) begin
             $display("t=%0t  BUS2  we=%b addr=%0h wdata=%0h rdata=%0h",
-                      $time, dut.we_bus_b2, dut.addr_bus_b2,
-                      dut.wdata_bus_b2, dut.rdata_slave_b2);
+                      $time, dut.u_bus2.we_bus, dut.u_bus2.addr_bus,
+                      dut.u_bus2.wdata_bus, dut.u_bus2.u_system_bus.rdata_slave);
         end
     end
 

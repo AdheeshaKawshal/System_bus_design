@@ -18,10 +18,9 @@ module control_mux (
     output wire grant_M1,
 
     // ---------------------------------------------------------
-    // Local (internal) arbiter side
+    // Local (internal) arbiter side: the arbiter decides occupancy from
+    // the raw req_Mx above, so only its grant needs to be muxed back out.
     // ---------------------------------------------------------
-    output wire req_M0_int,
-    output wire req_M1_int,
     input  wire grant_M0_int,
     input  wire grant_M1_int,
 
@@ -36,13 +35,12 @@ module control_mux (
     input  wire grant_ext
 );
 
-    // Demux: forward each master's request to exactly one arbiter based
-    // on its own ext_sel flag.
+    // Forward each master's request onward to the external bus only when
+    // its own ext_sel flag says its granted transaction decoded external.
+    // (Occupancy of the local arbiter no longer depends on this split --
+    // see system_bus.v, where the arbiter is fed the raw req_Mx instead.)
     wire req_M0_ext = req_M0 & ext_sel_M0;
     wire req_M1_ext = req_M1 & ext_sel_M1;
-
-    assign req_M0_int = req_M0 & ~ext_sel_M0;
-    assign req_M1_int = req_M1 & ~ext_sel_M1;
 
     assign req_ext = req_M0_ext | req_M1_ext;
 

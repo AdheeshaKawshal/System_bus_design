@@ -1,9 +1,30 @@
-module top_module (
+module system_busv1 (
     input wire clk,
     input wire rst,
 
-    // External bus interface: lets this design act as a master on
-    // another bus (arbiter + slave side live outside this design).
+    // ---------------------------------------------------------
+    // Master 1 port (SLAVE-role connection point): the socket where an
+    // *external* master plugs into this bus in place of an internally
+    // instantiated master. Directions mirror system_bus's own Master 1
+    // port, i.e. from the outside this looks like a slave input: the
+    // external master drives req/addr/wdata/valid in, this bus drives
+    // grant/rdata/ready/rvalid back out.
+    // ---------------------------------------------------------
+    input  wire                req_M1,
+    output wire                grant_M1,
+    input  wire [15:0]         addr_M1,    // {addr, we}, ADDR_W+RW wide
+    input  wire [7:0]          wdata_M1,
+    input  wire                valid_M1,
+    output wire [7:0]          rdata_M1,
+    output wire                ready_M1,
+    output wire                rvalid_M1,
+
+    // ---------------------------------------------------------
+    // External bus port (MASTER-role connection point): lets this
+    // design act as a master on another bus. This bus drives
+    // req/addr/wdata/valid out and consumes grant/rdata/ready/rvalid
+    // back in, so it plugs directly into another bus's Master 1 port.
+    // ---------------------------------------------------------
     output wire req_ext,
     input  wire grant_ext,
 
@@ -39,7 +60,9 @@ module top_module (
         .ADDR_W    (ADDR_W),
         .DATA_W    (DATA_W),
         .RW        (RW),
-        .REQ_DELAY (4)
+        .REQ_DELAY       (20),
+        .ACTIVE_TIMEOUT  (16),
+        .BACKOFF_DELAY   (5)
     ) u_master0 (
         .clk     (clk),
         .rst     (rst),
@@ -51,36 +74,6 @@ module top_module (
         .rdata_i (rdata_i_M0),
         .ready_i (ready_i_M0),
         .rvalid_i(rvalid_i_M0),
-        .ext_valid_o(ext_valid_o)
-    );
-
-    // ---------------------------------------------------------
-    // Master 1
-    // ---------------------------------------------------------
-    wire                  req_M1, grant_M1;
-    wire [ADDR_W+RW-1:0]  addr_o_M1;   // {addr, we} packed by the master itself
-    wire [DATA_W-1:0]     wdata_o_M1;
-    wire                  valid_o_M1;
-    wire [DATA_W-1:0]     rdata_i_M1;
-    wire                  ready_i_M1;
-    wire                  rvalid_i_M1;
-
-    master #(
-        .ADDR_W    (ADDR_W),
-        .DATA_W    (DATA_W),
-        .RW        (RW),
-        .REQ_DELAY (9)
-    ) u_master1 (
-        .clk     (clk),
-        .rst     (rst),
-        .req_o   (req_M1),
-        .grant_i (grant_M1),
-        .addr_o  (addr_o_M1),
-        .wdata_o (wdata_o_M1),
-        .valid_o (valid_o_M1),
-        .rdata_i (rdata_i_M1),
-        .ready_i (ready_i_M1),
-        .rvalid_i(rvalid_i_M1),
         .ext_valid_o(ext_valid_o)
     );
 
@@ -113,12 +106,12 @@ module top_module (
 
         .req_M1       (req_M1),
         .grant_M1     (grant_M1),
-        .addr_M1      (addr_o_M1),
-        .wdata_M1     (wdata_o_M1),
-        .valid_M1     (valid_o_M1),
-        .rdata_M1     (rdata_i_M1),
-        .ready_M1     (ready_i_M1),
-        .rvalid_M1    (rvalid_i_M1),
+        .addr_M1      (addr_M1),
+        .wdata_M1     (wdata_M1),
+        .valid_M1     (valid_M1),
+        .rdata_M1     (rdata_M1),
+        .ready_M1     (ready_M1),
+        .rvalid_M1    (rvalid_M1),
 
         .slave_sel1   (slave_sel1),
         .slave_sel2   (slave_sel2),

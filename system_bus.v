@@ -7,40 +7,33 @@ module system_bus #(
     input wire clk,
     input wire rst,
 
-    // ---------------------------------------------------------
-    // Arbiter interface
-    // ---------------------------------------------------------
-    input wire req_M0,
-    input wire req_M1,
-    input wire split,
-    input wire resume,
-
-    output wire grant_M0,
-    output wire grant_M1,
-
-    // ---------------------------------------------------------
-    // Master 0 bus-side signals (addr_M0 LSB carries we; ADDR_W+RW wide)
-    // ---------------------------------------------------------
-    input  wire [ADDR_W+RW-1:0] addr_M0,
+    // ===========================================================
+    // Master 0
+    // ===========================================================
+    input  wire                 req_M0,
+    output wire                 grant_M0,
+    input  wire [ADDR_W+RW-1:0] addr_M0,   // LSB carries we
     input  wire [DATA_W-1:0]    wdata_M0,
     input  wire                 valid_M0,
     output wire [DATA_W-1:0]    rdata_M0,
     output wire                 ready_M0,
     output wire                 rvalid_M0,
 
-    // ---------------------------------------------------------
-    // Master 1 bus-side signals (addr_M1 LSB carries we; ADDR_W+RW wide)
-    // ---------------------------------------------------------
-    input  wire [ADDR_W+RW-1:0] addr_M1,
+    // ===========================================================
+    // Master 1
+    // ===========================================================
+    input  wire                 req_M1,
+    output wire                 grant_M1,
+    input  wire [ADDR_W+RW-1:0] addr_M1,   // LSB carries we
     input  wire [DATA_W-1:0]    wdata_M1,
     input  wire                 valid_M1,
     output wire [DATA_W-1:0]    rdata_M1,
     output wire                 ready_M1,
     output wire                 rvalid_M1,
 
-    // ---------------------------------------------------------
-    // Decoded/muxed bus toward the slaves
-    // ---------------------------------------------------------
+    // ===========================================================
+    // Slaves (decoded/muxed bus + direct per-slave connections)
+    // ===========================================================
     output wire slave_sel1,
     output wire slave_sel2,
     output wire slave_sel3,
@@ -51,17 +44,23 @@ module system_bus #(
     output wire                we_bus,
     output wire                valid_bus,  // ctr line: master -> slave
 
-    // ---------------------------------------------------------
-    // Slave -> master return path (read data + ready), broadcast to
-    // both masters; each one only acts on it while it holds the grant.
-    // ---------------------------------------------------------
-    input  wire [DATA_W-1:0] rdata_slave,
-    input  wire              ready_slave,
-    input  wire              rvalid_slave,
+    input  wire [DATA_W-1:0]  rdata_S0,
+    input  wire               ready_S0,
+    input  wire               rvalid_S0,
 
-    // ---------------------------------------------------------
-    // Off-bus (external) forwarding
-    // ---------------------------------------------------------
+    input  wire [DATA_W-1:0]  rdata_S1,
+    input  wire               ready_S1,
+    input  wire               rvalid_S1,
+
+    input  wire [DATA_W-1:0]  rdata_S2,     // split-transaction slave
+    input  wire               ready_S2,
+    input  wire               rvalid_S2,
+    input  wire               split,       // from slave S2
+    input  wire               resume,      // from slave S2
+
+    // ===========================================================
+    // External bus (off-bus forwarding + external arbiter interface)
+    // ===========================================================
     output wire [ADDR_W+RW-1:0] addr_ext_o,
     output wire [DATA_W-1:0]    wdata_ext_o,
     output wire                 ext_valid_o,
@@ -70,10 +69,6 @@ module system_bus #(
     input  wire                 ready_ext_i,
     input  wire                 rvalid_ext_i,
 
-    // ---------------------------------------------------------
-    // External bus arbiter interface (arbiter lives outside this module).
-    // Only ever one master's transaction outstanding here at a time.
-    // ---------------------------------------------------------
     output wire req_ext,
     input  wire grant_ext
 );
@@ -81,7 +76,6 @@ module system_bus #(
     wire addr_sel, data_sel, ctr_sel;
     wire parked_id;
     wire ext_sel_M0, ext_sel_M1;
-    wire req_M0_int, req_M1_int;
     wire grant_M0_int, grant_M1_int;
 
     // Pulses when the transfer currently on the bus completes, so the
@@ -89,9 +83,11 @@ module system_bus #(
     // boundary instead of yanking it mid-transfer.
     wire xfer_done = valid_bus && ready_slave;
 
-    // Routes each master's single req/grant pair to either this bus's
-    // local arbiter or the external one, per the arbiter's ext_sel_Mx
-    // flags.
+    // Routes each master's single grant pair to either this bus's local
+    // arbiter or the external one, per the arbiter's ext_sel_Mx flags.
+    // Occupancy (who owns the bus) is decided by the arbiter alone, from
+    // the raw req_Mx below; this mux only steers where an already-granted
+    // transaction's request/grant actually go.
     control_mux u_control_mux (
         .ext_sel_M0    (ext_sel_M0),
         .ext_sel_M1    (ext_sel_M1),
@@ -101,8 +97,6 @@ module system_bus #(
         .grant_M0      (grant_M0),
         .grant_M1      (grant_M1),
 
-        .req_M0_int    (req_M0_int),
-        .req_M1_int    (req_M1_int),
         .grant_M0_int  (grant_M0_int),
         .grant_M1_int  (grant_M1_int),
 
@@ -113,8 +107,8 @@ module system_bus #(
     arbiter u_arbiter (
         .clk         (clk),
         .rst         (rst),
-        .req_M0      (req_M0_int),
-        .req_M1      (req_M1_int),
+        .req_M0      (req_M0),
+        .req_M1      (req_M1),
         .split       (split),
         .resume      (resume),
         .xfer_done   (xfer_done),
@@ -147,6 +141,22 @@ module system_bus #(
     // ctr bus: valid (master->slave) muxed above; ready (slave->master)
     // is broadcast back to both masters below.
     assign valid_bus = slave_sel1 | slave_sel2 | slave_sel3;
+
+    // Mux the selected slave's response back onto the shared return path
+    wire [DATA_W-1:0] rdata_slave  = slave_sel1 ? rdata_S0  :
+                                      slave_sel2 ? rdata_S1  :
+                                      slave_sel3 ? rdata_S2  :
+                                      {DATA_W{1'b0}};
+
+    wire               ready_slave = slave_sel1 ? ready_S0  :
+                                      slave_sel2 ? ready_S1  :
+                                      slave_sel3 ? ready_S2  :
+                                      1'b0;
+
+    wire               rvalid_slave = slave_sel1 ? rvalid_S0 :
+                                       slave_sel2 ? rvalid_S1 :
+                                       slave_sel3 ? rvalid_S2 :
+                                       1'b0;
 
     // Each master's return path is sourced from the internal slave bus or
     // the external bus depending on which one its (latched) request was
