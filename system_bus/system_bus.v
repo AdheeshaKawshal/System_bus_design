@@ -61,9 +61,9 @@ module system_bus #(
     // ===========================================================
     // External bus (off-bus forwarding + external arbiter interface)
     // ===========================================================
-    output wire [ADDR_W+RW-1:0] addr_ext_o,
-    output wire [DATA_W-1:0]    wdata_ext_o,
-    output wire                 ext_valid_o,
+    output reg  [ADDR_W+RW-1:0] addr_ext_o,
+    output reg  [DATA_W-1:0]    wdata_ext_o,
+    output reg                  ext_valid_o,
 
     input  wire [DATA_W-1:0]    rdata_ext_i,
     input  wire                 ready_ext_i,
@@ -89,6 +89,8 @@ module system_bus #(
     // the raw req_Mx below; this mux only steers where an already-granted
     // transaction's request/grant actually go.
     control_mux u_control_mux (
+        .clk           (clk),
+        .rst           (rst),
         .ext_sel_M0    (ext_sel_M0),
         .ext_sel_M1    (ext_sel_M1),
 
@@ -112,7 +114,7 @@ module system_bus #(
         .split       (split),
         .resume      (resume),
         .xfer_done   (xfer_done),
-        .ext_valid_i (ext_valid_o),
+        .ext_valid_i (ext_valid_o_comb),
         .grant_M0    (grant_M0_int),
         .grant_M1    (grant_M1_int),
         .addr_sel    (addr_sel),
@@ -131,12 +133,10 @@ module system_bus #(
     wire                 valid_mux = ctr_sel  ? valid_M1 : valid_M0;
 
     assign wdata_bus = wdata_mux;
-    assign we_bus     = addr_mux[0];
-    assign addr_bus   = addr_mux[ADDR_W-2-2+RW:RW];
 
     // Same data the granted master is driving is also what goes out to
     // the external bus when its address decodes external (ext_valid_o).
-    assign wdata_ext_o = wdata_mux;
+    wire [DATA_W-1:0] wdata_ext_o_comb = wdata_mux;
 
     // ctr bus: valid (master->slave) muxed above; ready (slave->master)
     // is broadcast back to both masters below.
@@ -158,15 +158,41 @@ module system_bus #(
                                        slave_sel3 ? rvalid_S2 :
                                        1'b0;
 
+    // Loop-breaking register: rdata_ext_i/ready_ext_i/rvalid_ext_i are the
+    // response coming back from whatever sits on this bus's external port.
+    // In a cross-connected bus_interconnect that's the other system_bus's
+    // Master 1 (slave-role) response - ready_M1/rdata_M1/rvalid_M1 - which
+    // that bus forwards straight through combinationally the same way we
+    // do below whenever ITS ext_sel_M1 is set. Wiring the two directly
+    // together (as bus_interconnect.v does) closes a zero-delay
+    // combinational loop across the two buses on this return path, same
+    // mechanism as the grant_ext and addr_ext_o/wdata_ext_o/ext_valid_o
+    // loops fixed elsewhere in this file / in control_mux.v. Registering
+    // the inputs here breaks it with one cycle of extra return latency.
+    reg [DATA_W-1:0] rdata_ext_i_sync;
+    reg              ready_ext_i_sync;
+    reg              rvalid_ext_i_sync;
+    always @(posedge clk or negedge rst) begin
+        if (!rst) begin
+            rdata_ext_i_sync  <= {DATA_W{1'b0}};
+            ready_ext_i_sync  <= 1'b0;
+            rvalid_ext_i_sync <= 1'b0;
+        end else begin
+            rdata_ext_i_sync  <= rdata_ext_i;
+            ready_ext_i_sync  <= ready_ext_i;
+            rvalid_ext_i_sync <= rvalid_ext_i;
+        end
+    end
+
     // Each master's return path is sourced from the internal slave bus or
     // the external bus depending on which one its (latched) request was
     // routed to.
-    wire [DATA_W-1:0] rdata_M0_src  = ext_sel_M0 ? rdata_ext_i  : rdata_slave;
-    wire [DATA_W-1:0] rdata_M1_src  = ext_sel_M1 ? rdata_ext_i  : rdata_slave;
-    wire              ready_M0_src  = ext_sel_M0 ? ready_ext_i  : ready_slave;
-    wire              ready_M1_src  = ext_sel_M1 ? ready_ext_i  : ready_slave;
-    wire              rvalid_M0_src = ext_sel_M0 ? rvalid_ext_i : rvalid_slave;
-    wire              rvalid_M1_src = ext_sel_M1 ? rvalid_ext_i : rvalid_slave;
+    wire [DATA_W-1:0] rdata_M0_src  = ext_sel_M0 ? rdata_ext_i_sync  : rdata_slave;
+    wire [DATA_W-1:0] rdata_M1_src  = ext_sel_M1 ? rdata_ext_i_sync  : rdata_slave;
+    wire              ready_M0_src  = ext_sel_M0 ? ready_ext_i_sync  : ready_slave;
+    wire              ready_M1_src  = ext_sel_M1 ? ready_ext_i_sync  : ready_slave;
+    wire              rvalid_M0_src = ext_sel_M0 ? rvalid_ext_i_sync : rvalid_slave;
+    wire              rvalid_M1_src = ext_sel_M1 ? rvalid_ext_i_sync : rvalid_slave;
 
     // Read data is broadcast, but ready/rvalid are gated by each master's
     // own grant: once the arbiter can park one master and lend the bus to
@@ -185,6 +211,9 @@ module system_bus #(
     assign rvalid_M0 = (rvalid_M0_src && grant_M0) || (resume && !parked_id);
     assign rvalid_M1 = (rvalid_M1_src && grant_M1) || (resume &&  parked_id);
 
+    wire [ADDR_W+RW-1:0] addr_ext_o_comb;
+    wire                 ext_valid_o_comb;
+
     addr_decoder #(
         .ADDR_W     (ADDR_W),
         .NUM_SLAVES (NUM_SLAVES),
@@ -197,10 +226,36 @@ module system_bus #(
         .slave_sel3  (slave_sel3),
         .addr_o      (addr_bus),
         .we          (we_bus),
-        
-        .addr_ext_o  (addr_ext_o),
-        .ext_valid_o (ext_valid_o),
+
+        .addr_ext_o  (addr_ext_o_comb),
+        .ext_valid_o (ext_valid_o_comb),
         .addr_invalid(addr_invalid)
     );
+
+    // Loop-breaking register: addr_ext_o/wdata_ext_o/ext_valid_o are this
+    // bus acting as a MASTER onto whatever sits on its external port. In
+    // a cross-connected bus_interconnect that "whatever" is the other
+    // system_bus's Master 1 (slave-role) port - addr_M1/wdata_M1/valid_M1
+    // - which that bus's own addr_mux/wdata_mux/valid_mux can route right
+    // back out through ITS addr_ext_o/wdata_ext_o/ext_valid_o, closing a
+    // zero-delay combinational loop across the two buses (flagged as
+    // LUTLP-1 during synthesis, same mechanism as the grant_ext loop
+    // control_mux.v registers). Registering the exported values here
+    // breaks that loop with one cycle of extra forwarding latency.
+    // ext_valid_i above is deliberately fed from the pre-register *_comb
+    // value instead, so the arbiter's own ext_sel_M0/M1 latch timing -
+    // which depends on ext_valid_i lining up with the same cycle as the
+    // granted master's address - is unaffected.
+    always @(posedge clk or negedge rst) begin
+        if (!rst) begin
+            addr_ext_o  <= {(ADDR_W+RW){1'b0}};
+            wdata_ext_o <= {DATA_W{1'b0}};
+            ext_valid_o <= 1'b0;
+        end else begin
+            addr_ext_o  <= addr_ext_o_comb;
+            wdata_ext_o <= wdata_ext_o_comb;
+            ext_valid_o <= ext_valid_o_comb;
+        end
+    end
 
 endmodule

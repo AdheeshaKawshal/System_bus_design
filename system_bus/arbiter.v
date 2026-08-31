@@ -1,3 +1,4 @@
+(* keep_hierarchy = "yes" *)
 module arbiter (
     input wire clk,
     input wire rst,

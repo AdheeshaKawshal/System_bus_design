@@ -1,34 +1,25 @@
 `timescale 1ns / 1ps
 module bus_interconnect_tb;
 
-    reg clk_a;  // bus 1's FPGA
-    reg clk_b;  // bus 2's FPGA - independent oscillator, same nominal period, offset phase
-    reg rst;
+    reg clk;   // shared synchronous clock for both buses
+    reg rst_n; // active-low reset
 
-    bus_interconnect_serial dut (
-        .clk_a (clk_a),
-        .clk_b (clk_b),
-        .rst   (rst)
+    bus_interconnect dut (
+        .clk   (clk),
+        .rst_n (rst_n)
     );
 
-    // Two nominally-identical clocks that are NOT phase-aligned, modeling
-    // two separate FPGA oscillators - this is what actually exercises the
-    // cdc_pulse_sync path on the ready line instead of accidentally
-    // behaving like one shared clock. clk_b's free-run only starts after
-    // a phase offset so it never lines up edge-for-edge with clk_a.
-    always #5 clk_a = ~clk_a;
-    initial begin
-        clk_b = 1'b0;
-        #3;
-        forever #5 clk_b = ~clk_b;
-    end
+    always #5 clk = ~clk;
 
     initial begin
-        clk_a = 1'b0;
-        rst   = 1'b0;
+        clk   = 1'b0;
+        // bus_interconnect inverts this internally (wire rst = !rst_n) to
+        // match the board's reset button idle level, so rst_n starts
+        // asserted HIGH here and drops LOW to release.
+        rst_n = 1'b1;
 
         // release reset
-        #12 rst = 1'b1;
+        #12 rst_n = 1'b0;
 
         // Bus 1's masters run their transaction tables automatically once
         // out of reset (see master.v). Master 0's first two transactions
@@ -39,21 +30,21 @@ module bus_interconnect_tb;
     end
 
     // Log every completed transfer on bus 1's own local slaves
-    always @(posedge clk_a) begin
-        if (rst && dut.u_bus1.u_system_bus.valid_bus && dut.u_bus1.u_system_bus.ready_slave) begin
+    always @(posedge clk) begin
+        if (!rst_n && dut.u_bus1.u_system_bus.valid_bus && dut.u_bus1.u_system_bus.ready_slave) begin
             $display("t=%0t  BUS1  we=%b addr=%0h wdata=%0h rdata=%0h",
-                      $time, dut.u_bus1.we_bus, dut.u_bus1.addr_bus,
-                      dut.u_bus1.wdata_bus, dut.u_bus1.u_system_bus.rdata_slave);
+                      $time, dut.u_bus1.u_system_bus.we_bus, dut.u_bus1.u_system_bus.addr_bus,
+                      dut.u_bus1.u_system_bus.wdata_bus, dut.u_bus1.u_system_bus.rdata_slave);
         end
     end
 
     // Log every completed transfer on bus 2 (Master 0 local, or Master 1
     // = bus 1 wired straight into bus 2's exposed Master 1 slot)
-    always @(posedge clk_b) begin
-        if (rst && dut.u_bus2.u_system_bus.valid_bus && dut.u_bus2.u_system_bus.ready_slave) begin
+    always @(posedge clk) begin
+        if (!rst_n && dut.u_bus2.u_system_bus.valid_bus && dut.u_bus2.u_system_bus.ready_slave) begin
             $display("t=%0t  BUS2  we=%b addr=%0h wdata=%0h rdata=%0h",
-                      $time, dut.u_bus2.we_bus, dut.u_bus2.addr_bus,
-                      dut.u_bus2.wdata_bus, dut.u_bus2.u_system_bus.rdata_slave);
+                      $time, dut.u_bus2.u_system_bus.we_bus, dut.u_bus2.u_system_bus.addr_bus,
+                      dut.u_bus2.u_system_bus.wdata_bus, dut.u_bus2.u_system_bus.rdata_slave);
         end
     end
 

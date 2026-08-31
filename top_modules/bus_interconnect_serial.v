@@ -1,9 +1,8 @@
 module bus_interconnect_serial (
-    input wire clk_a,   // bus 1's FPGA
-    input wire clk_b,   // bus 2's FPGA - independent oscillator, same nominal frequency
-    input wire rst
+    input wire clk_a,   // bus 1's FPGA   // bus 2's FPGA - independent oscillator, same nominal frequency
+    input wire rst_n
 );
-
+    assign rst = !rst_n;
     localparam ADDR_W = 15;   // {internal_flag(1), slave_sel(2), slave_addr(12)}
     localparam DATA_W = 8;
     localparam RW     = 1;
@@ -83,7 +82,7 @@ module bus_interconnect_serial (
         .DATA_W (DATA_W),
         .RW     (RW)
     ) u_slave_bridge_b2 (
-        .clk  (clk_b),
+        .clk  (clk_a),
         .rst  (rst),
 
         // internal side (bus 2's Master 1 port)
@@ -129,7 +128,7 @@ module bus_interconnect_serial (
         .DATA_W (DATA_W),
         .RW     (RW)
     ) u_master_bridge_b2 (
-        .clk          (clk_b),
+        .clk          (clk_a),
         .rst          (rst),
 
         // internal side (system_bus's ext_* port)
@@ -228,7 +227,7 @@ module bus_interconnect_serial (
     );
 
     system_busv2 u_bus2 (
-        .clk          (clk_b),
+        .clk          (clk_a),
         .rst          (rst),
 
         // Master 1 port (slave-role): accepts bus 1, arriving over the

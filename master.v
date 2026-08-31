@@ -17,12 +17,12 @@ module master #(
     // Bus interface (driven only while granted).
     // addr_o carries {address, we} packed together (we in the LSB), ready
     // to connect straight to the bus's addr_Mx port with no wrapping needed.
-    output reg [ADDR_W+RW-1:0] addr_o,
-    output reg [DATA_W-1:0]    wdata_o,
-    output reg                 valid_o,
+    (* MARK_DEBUG = "TRUE" *) output reg [ADDR_W+RW-1:0] addr_o,
+    (* MARK_DEBUG = "TRUE" *) output reg [DATA_W-1:0]    wdata_o,
+    (* MARK_DEBUG = "TRUE" *) output reg                 valid_o,
 
-    input wire [DATA_W-1:0] rdata_i,
-    input wire ready_i,
+    (* MARK_DEBUG = "TRUE" *) input wire [DATA_W-1:0] rdata_i,
+    (* MARK_DEBUG = "TRUE" *) input wire ready_i,
     input wire ext_valid_o,
     input wire rvalid_i   // pulses high alongside rdata_i when the slave's read data is valid
 );
@@ -80,8 +80,8 @@ module master #(
             // 7: read  slave2 addr 0x008
             addr_mem[0]  <= 15'h4001; wdata_mem[0] <= 8'h11; we_mem[0] <= 1'b1;
             addr_mem[1]  <= 15'h4001; wdata_mem[1] <= {DATA_W{1'b0}}; we_mem[1] <= 1'b0;
-            addr_mem[2]  <= 15'h6005; wdata_mem[2] <= 8'h22; we_mem[2] <= 1'b1;
-            addr_mem[3]  <= 15'h6005; wdata_mem[3] <= {DATA_W{1'b0}}; we_mem[3] <= 1'b0;
+            addr_mem[2]  <= 15'h2005; wdata_mem[2] <= 8'h22; we_mem[2] <= 1'b1;
+            addr_mem[3]  <= 15'h2005; wdata_mem[3] <= {DATA_W{1'b0}}; we_mem[3] <= 1'b0;
             addr_mem[4]  <= 15'h4001; wdata_mem[4] <= 8'h33; we_mem[4] <= 1'b1;
             addr_mem[5]  <= 15'h4001; wdata_mem[5] <= {DATA_W{1'b0}}; we_mem[5] <= 1'b0;
             addr_mem[6]  <= 15'h6008; wdata_mem[6] <= 8'h44; we_mem[6] <= 1'b1;

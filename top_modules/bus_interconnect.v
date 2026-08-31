@@ -1,8 +1,8 @@
 module bus_interconnect (
     input wire clk,
-    input wire rst
+    input wire rst_n
 );
-
+    wire rst = !rst_n;
     localparam ADDR_W = 15;   // {internal_flag(1), slave_sel(2), slave_addr(12)}
     localparam DATA_W = 8;
     localparam RW     = 1;
@@ -15,13 +15,13 @@ module bus_interconnect (
     // and returns grant/rdata/ready/rvalid). So bus 1 becomes a second
     // master directly on bus 2.
     // ---------------------------------------------------------
-    wire                 b1m_req;      // master(bus1) -> slave(bus2): request
-    wire                 b1m_grant;    // slave(bus2)  -> master(bus1): grant
-    wire [ADDR_W+RW-1:0] b1m_addr;     // master(bus1) -> slave(bus2): {addr, we}
-    wire [DATA_W-1:0]    b1m_wdata;    // master(bus1) -> slave(bus2): write data
-    wire                 b1m_valid;    // master(bus1) -> slave(bus2): valid
-    wire [DATA_W-1:0]    b1m_rdata;    // slave(bus2)  -> master(bus1): read data
-    wire                 b1m_ready;    // slave(bus2)  -> master(bus1): ready
+    (* MARK_DEBUG = "TRUE" *)wire                 b1m_req;      // master(bus1) -> slave(bus2): request
+    (* MARK_DEBUG = "TRUE" *)wire                 b1m_grant;    // slave(bus2)  -> master(bus1): grant
+    (* MARK_DEBUG = "TRUE" *)wire [ADDR_W+RW-1:0] b1m_addr;     // master(bus1) -> slave(bus2): {addr, we}
+    (* MARK_DEBUG = "TRUE" *)wire [DATA_W-1:0]    b1m_wdata;    // master(bus1) -> slave(bus2): write data
+    (* MARK_DEBUG = "TRUE" *)wire                 b1m_valid;    // master(bus1) -> slave(bus2): valid
+    (* MARK_DEBUG = "TRUE" *)wire [DATA_W-1:0]    b1m_rdata;    // slave(bus2)  -> master(bus1): read data
+    (* MARK_DEBUG = "TRUE" *)wire                 b1m_ready;    // slave(bus2)  -> master(bus1): ready
     wire                 b1m_rvalid;   // slave(bus2)  -> master(bus1): rvalid
 
     // ---------------------------------------------------------
@@ -31,13 +31,13 @@ module bus_interconnect (
     // link is bidirectional overall: each bus can drive the other's
     // slaves through its Master 1 socket.
     // ---------------------------------------------------------
-    wire                 b2m_req;      // master(bus2) -> slave(bus1): request
-    wire                 b2m_grant;    // slave(bus1)  -> master(bus2): grant
-    wire [ADDR_W+RW-1:0] b2m_addr;     // master(bus2) -> slave(bus1): {addr, we}
-    wire [DATA_W-1:0]    b2m_wdata;    // master(bus2) -> slave(bus1): write data
-    wire                 b2m_valid;    // master(bus2) -> slave(bus1): valid
-    wire [DATA_W-1:0]    b2m_rdata;    // slave(bus1)  -> master(bus2): read data
-    wire                 b2m_ready;    // slave(bus1)  -> master(bus2): ready
+    (* MARK_DEBUG = "TRUE" *)wire                 b2m_req;      // master(bus2) -> slave(bus1): request
+    (* MARK_DEBUG = "TRUE" *)wire                 b2m_grant;    // slave(bus1)  -> master(bus2): grant
+    (* MARK_DEBUG = "TRUE" *)wire [ADDR_W+RW-1:0] b2m_addr;     // master(bus2) -> slave(bus1): {addr, we}
+    (* MARK_DEBUG = "TRUE" *)wire [DATA_W-1:0]    b2m_wdata;    // master(bus2) -> slave(bus1): write data
+    (* MARK_DEBUG = "TRUE" *)wire                 b2m_valid;    // master(bus2) -> slave(bus1): valid
+    (* MARK_DEBUG = "TRUE" *)wire [DATA_W-1:0]    b2m_rdata;    // slave(bus1)  -> master(bus2): read data
+    (* MARK_DEBUG = "TRUE" *)wire                 b2m_ready;    // slave(bus1)  -> master(bus2): ready
     wire                 b2m_rvalid;   // slave(bus1)  -> master(bus2): rvalid
 
     system_busv1 u_bus1 (

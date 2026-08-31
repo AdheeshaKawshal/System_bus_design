@@ -1,24 +1,29 @@
 module top_module (
     input wire clk,
-    input wire rst,
-
-    // External bus interface: lets this design act as a master on
-    // another bus (arbiter + slave side live outside this design).
-    output wire req_ext,
-    input  wire grant_ext,
-
-    output wire [15:0] addr_ext_o,     // {addr, we}, ADDR_W+RW wide
-    output wire [7:0]  wdata_ext_o,
-    output wire        ext_valid_o,
-
-    input  wire [7:0]  rdata_ext_i,
-    input  wire        ready_ext_i,
-    input  wire        rvalid_ext_i
+    input wire rst_n
 );
-
+    wire rst = !rst_n;
     localparam ADDR_W = 15;   // {internal_flag(1), slave_sel(2), slave_addr(12)}
     localparam DATA_W = 8;
     localparam RW     = 1;
+
+    // ---------------------------------------------------------
+    // External bus interface: system_bus can act as a master onto
+    // another bus (arbiter + slave side would live outside this design),
+    // but no such external bus exists here - kept fully internal so
+    // top_module exposes only clk/rst. req_ext/addr_ext_o/wdata_ext_o/
+    // ext_valid_o are left dangling (nothing needs to observe them);
+    // grant_ext and the return-data lines are tied low so any address
+    // that decodes external just never completes.
+    // ---------------------------------------------------------
+    wire                 req_ext;
+    wire                 grant_ext     = 1'b0;
+    wire [ADDR_W+RW-1:0] addr_ext_o;
+    wire [DATA_W-1:0]    wdata_ext_o;
+    wire                 ext_valid_o;
+    wire [DATA_W-1:0]    rdata_ext_i   = {DATA_W{1'b0}};
+    wire                 ready_ext_i   = 1'b0;
+    wire                 rvalid_ext_i  = 1'b0;
 
     // Bus control: driven by slave3 (slave_split), the only slave that
     // ever needs to park the granted master mid-transaction.
