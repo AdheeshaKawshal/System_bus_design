@@ -85,9 +85,9 @@ module serial_uart_system_bus (
         .ADDR_W    (ADDR_W),
         .DATA_W    (DATA_W),
         .RW        (RW),
-        .REQ_DELAY (4)
+        .REQ_DELAY (400)
     ) u_master0 (
-        .clk         (tick_4hz),
+        .clk         (clk),
         .rst         (rst),
         .req_o       (req_M0),
         .grant_i     (grant_M0),
@@ -151,7 +151,7 @@ module serial_uart_system_bus (
         .RW         (RW),
         .NUM_SLAVES (3)
     ) u_system_bus (
-        .clk          (tick_4hz),
+        .clk          (clk),
         .rst          (rst),
 
         .req_M0       (req_M0),
@@ -219,7 +219,7 @@ module serial_uart_system_bus (
         .ADDR_W (12),
         .DATA_W (DATA_W)
     ) u_slave0 (
-        .clk      (tick_4hz),
+        .clk      (clk),
         .rst      (rst),
         .cs_i     (slave_sel1),
         .valid_i  (valid_bus),
@@ -242,7 +242,7 @@ module serial_uart_system_bus (
         .ADDR_W (12),
         .DATA_W (DATA_W)
     ) u_slave1 (
-        .clk      (tick_4hz),
+        .clk      (clk),
         .rst      (rst),
         .cs_i     (slave_sel2),
         .valid_i  (valid_bus),
@@ -267,7 +267,7 @@ module serial_uart_system_bus (
         .ADDR_W (12),
         .DATA_W (DATA_W)
     ) u_slave2 (
-        .clk      (tick_4hz),
+        .clk      (clk),
         .rst      (rst),
         .cs_i     (slave_sel3),
         .valid_i  (valid_bus),
@@ -309,7 +309,7 @@ module serial_uart_system_bus (
         .DATA_W (DATA_W),
         .RW     (RW)
     ) u_master_bridge (
-        .clk          (tick_4hz),
+        .clk          (clk),
         .rst          (rst),
 
         .addr_ext_o   (ext_addr),
@@ -350,7 +350,7 @@ module serial_uart_system_bus (
         .DATA_W (DATA_W),
         .RW     (RW)
     ) u_slave_bridge (
-        .clk  (tick_4hz),
+        .clk  (clk),
         .rst  (rst),
 
         .req_o    (sb_req),
@@ -398,7 +398,7 @@ module serial_uart_system_bus (
         .RW        (RW),
         .REQ_DELAY (4)
     ) u_master1 (
-        .clk         (tick_4hz),
+        .clk         (clk),
         .rst         (rst),
         .req_o       (m1L_req),
         .grant_i     (m1L_grant),
@@ -422,12 +422,15 @@ module serial_uart_system_bus (
 
     // Both local masters' UART framing/transport in one place. See
     // uart_top.v's header for the request-frame layout (master_sel field
-    // picks m0/m1/broadcast).
+    // picks m0/m1/broadcast). o_Tx_Serial drives uart_tx_serial directly -
+    // whatever the addressed master actually wrote/read (resp0_data/
+    // resp1_data, built from m0_rdata_i/m1_rdata_i) is what goes out, not
+    // a raw echo of the request.
     UART_TOP #(
         .ADDR_W (ADDR_W),
         .DATA_W (DATA_W)
     ) u_uart_top (
-        .clk         (tick_4hz),
+        .clk         (clk),
         .rst         (rst),
 
         .i_Rx_Serial (uart_rx_serial),
@@ -462,7 +465,7 @@ module serial_uart_system_bus (
         .DATA_W (DATA_W),
         .RW     (RW)
     ) u_m1_select_mux (
-        .sel (1'b0),
+        .sel (1'b1),
 
         .reqA    (m1L_req),
         .grantA  (m1L_grant),
@@ -497,7 +500,7 @@ module serial_uart_system_bus (
     led_display #(
         .DATA_W (DATA_W)
     ) u_led_display (
-        .clk      (tick_4hz),
+        .clk      (clk),
         .rst      (rst),
         .we_i     (we_bus),
         .valid_i  (valid_bus),
