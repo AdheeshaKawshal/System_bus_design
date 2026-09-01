@@ -34,7 +34,13 @@ module system_busv1 (
 
     input  wire [7:0]  rdata_ext_i,
     input  wire        ready_ext_i,
-    input  wire        rvalid_ext_i
+    input  wire        rvalid_ext_i,
+    output wire           sready,
+    output wire [11:0]    addr_m,
+    output wire           we_m,
+    output wire           valid_m,
+    output wire [7:0]     wdata_m,
+    output wire [7:0]     rdata_m
 );
 
     localparam ADDR_W = 15;   // {internal_flag(1), slave_sel(2), slave_addr(12)}
@@ -60,7 +66,7 @@ module system_busv1 (
         .ADDR_W    (ADDR_W),
         .DATA_W    (DATA_W),
         .RW        (RW),
-        .REQ_DELAY       (30),
+        .REQ_DELAY       (4),
         .ACTIVE_TIMEOUT  (16),
         .BACKOFF_DELAY   (5)
     ) u_master0 (
@@ -224,5 +230,18 @@ module system_busv1 (
 
     assign split  = split_o_S2;
     assign resume = resume_o_S2;
+    assign sready = ready_o_S2 || ready_o_S1 || ready_o_S0;  // OR of the local slaves' own ready pulses
+    assign addr_m  = addr_bus;
+    assign we_m    = we_bus;
+    assign valid_m = valid_bus;
+    assign wdata_m = wdata_bus;
+    // Whichever local slave's ready just pulsed (see slave.v: ready_o only
+    // pulses under that slave's own cs_i && valid_i) is the one whose read
+    // data is actually meaningful right now - same mutual-exclusion sready
+    // already relies on.
+    assign rdata_m = ready_o_S0 ? rdata_o_S0 :
+                      ready_o_S1 ? rdata_o_S1 :
+                      ready_o_S2 ? rdata_o_S2 :
+                      {DATA_W{1'b0}};
 
 endmodule

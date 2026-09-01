@@ -87,7 +87,7 @@ module master_bridge #(
     localparam M_IDLE       = 1'b0,
                M_WAIT_GRANT = 1'b1;
 
-    reg                  m_state;
+    (* MARK_DEBUG = "TRUE" *) reg                  m_state;
     reg [ADDR_W+RW-1:0]  addr_latch;
     reg [DATA_W-1:0]     wdata_latch;
 
@@ -127,7 +127,9 @@ module master_bridge #(
             req_stretch_cnt <= req_stretch_cnt - 1'b1;
         end
     end
-    assign req_tx_o = tx_start_en || (req_stretch_cnt != 0);
+    (* MARK_DEBUG = "TRUE" *) wire req_tx_o_dbg;
+    assign req_tx_o     = tx_start_en || (req_stretch_cnt != 0);
+    assign req_tx_o_dbg = req_tx_o;
 
     // grant_rx_i: raw stretched level from the remote domain - synchronize
     // (2 flops resolve metastability, edge-detect regenerates a clean
@@ -144,11 +146,11 @@ module master_bridge #(
             grant_sync2 <= grant_sync1;
         end
     end
-    wire grant_pulse = grant_sync1 && !grant_sync2;
+    (* MARK_DEBUG = "TRUE" *) wire grant_pulse = grant_sync1 && !grant_sync2;
 
     // The actual addr/wdata transmission only fires once the remote bus
     // is confirmed reserved.
-    wire tx_data_en = (m_state == M_WAIT_GRANT) && grant_pulse;
+    (* MARK_DEBUG = "TRUE" *) wire tx_data_en = (m_state == M_WAIT_GRANT) && grant_pulse;
 
     wire addr_tx_busy, wdata_tx_busy;
     assign link_busy_o = addr_tx_busy | wdata_tx_busy;

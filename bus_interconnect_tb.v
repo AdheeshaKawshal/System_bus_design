@@ -4,8 +4,8 @@ module bus_interconnect_tb;
     reg clk;   // shared synchronous clock for both buses
     reg rst_n; // active-low reset
 
-    bus_interconnect dut (
-        .clk   (clk),
+    bus_interconnect_serial dut (
+        .clk_a   (clk),
         .rst_n (rst_n)
     );
 

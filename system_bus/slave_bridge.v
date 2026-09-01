@@ -59,7 +59,7 @@ module slave_bridge #(
                S_WAIT_DATA  = 2'd2,  // local bus reserved, waiting for addr/wdata to arrive over the link
                S_ACTIVE     = 2'd3;
 
-    reg [1:0] state;
+    (* MARK_DEBUG = "TRUE" *) reg [1:0] state;
     assign link_rx_busy_o = (state != S_IDLE);
 
     // ---------------------------------------------------------
@@ -80,11 +80,11 @@ module slave_bridge #(
             req_sync2 <= req_sync1;
         end
     end
-    wire req_pulse = req_sync1 && !req_sync2;
+    (* MARK_DEBUG = "TRUE" *) wire req_pulse = req_sync1 && !req_sync2;
 
-    wire                      addr_rx_ready;
+    (* MARK_DEBUG = "TRUE" *) wire       addr_rx_ready;
     wire [ADDR_W+RW-1:0]      addr_rx_word;
-    wire                      wdata_rx_ready;
+    (* MARK_DEBUG = "TRUE" *) wire       wdata_rx_ready;
     wire [DATA_W-1:0]         wdata_rx_word;
 
     uart_rx #(
@@ -115,7 +115,7 @@ module slave_bridge #(
     // meaningful in S_WAIT_DATA: the remote side never sends these before
     // grant_tx_o has gone out, so nothing is missed by not watching them
     // in the other states.
-    reg addr_got, wdata_got;
+    (* MARK_DEBUG = "TRUE" *) reg addr_got, wdata_got;
     reg [ADDR_W+RW-1:0] addr_word_r;
     reg [DATA_W-1:0]    wdata_word_r;
 

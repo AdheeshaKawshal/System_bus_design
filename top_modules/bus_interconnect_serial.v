@@ -27,14 +27,14 @@ module bus_interconnect_serial (
     wire link12_req_tx, link12_grant_tx;
     wire link12_addr_tx, link12_wdata_tx, link12_status_tx, link12_ready_tx;
 
-    wire                 b1m_req, b1m_grant;
-    wire [ADDR_W+RW-1:0] b1m_addr;
-    wire [DATA_W-1:0]    b1m_wdata;
-    wire                 b1m_valid;
-    wire [DATA_W-1:0]    b1m_rdata;
-    wire                 b1m_ready;
-    wire                 b1m_rvalid;
-    wire                 b1_arb_req, b1_arb_grant;
+    (* MARK_DEBUG = "TRUE" *) wire                 b1m_req, b1m_grant;
+    (* MARK_DEBUG = "TRUE" *) wire [ADDR_W+RW-1:0] b1m_addr;
+    (* MARK_DEBUG = "TRUE" *) wire [DATA_W-1:0]    b1m_wdata;
+    (* MARK_DEBUG = "TRUE" *) wire                 b1m_valid;
+    (* MARK_DEBUG = "TRUE" *)wire [DATA_W-1:0]    b1m_rdata;
+    (* MARK_DEBUG = "TRUE" *)wire                 b1m_ready;
+    (* MARK_DEBUG = "TRUE" *)wire                 b1m_rvalid;
+    (* MARK_DEBUG = "TRUE" *)wire                 b1_arb_req, b1_arb_grant;
 
     master_bridge #(
         .ADDR_W (ADDR_W),
@@ -53,7 +53,7 @@ module bus_interconnect_serial (
         .rvalid_ext_i (b1m_rvalid),
         .req_ext      (b1m_req),
         .grant_ext    (b1m_grant),
-        // only bus 1 uses this link in this direction: auto-grant
+
         .ext_arb_req_o   (b1_arb_req),
         .ext_arb_grant_i (b1_arb_grant),
 
@@ -69,13 +69,13 @@ module bus_interconnect_serial (
     );
     assign b1_arb_grant = b1_arb_req;
 
-    wire                 b2s_req, b2s_grant;
-    wire [ADDR_W+RW-1:0] b2s_addr;
-    wire [DATA_W-1:0]    b2s_wdata;
-    wire                 b2s_valid;
-    wire [DATA_W-1:0]    b2s_rdata;
-    wire                 b2s_ready;
-    wire                 b2s_rvalid;
+    (* MARK_DEBUG = "TRUE" *) wire                 b2s_req, b2s_grant;
+    (* MARK_DEBUG = "TRUE" *)wire [ADDR_W+RW-1:0] b2s_addr;
+    (* MARK_DEBUG = "TRUE" *)wire [DATA_W-1:0]    b2s_wdata;
+    (* MARK_DEBUG = "TRUE" *)wire                 b2s_valid;
+    (* MARK_DEBUG = "TRUE" *)wire [DATA_W-1:0]    b2s_rdata;
+    (* MARK_DEBUG = "TRUE" *)wire                 b2s_ready;
+    (* MARK_DEBUG = "TRUE" *)wire                 b2s_rvalid;
 
     slave_bridge #(
         .ADDR_W (ADDR_W),
@@ -114,13 +114,13 @@ module bus_interconnect_serial (
     wire link21_req_tx, link21_grant_tx;
     wire link21_addr_tx, link21_wdata_tx, link21_status_tx, link21_ready_tx;
 
-    wire                 b2m_req, b2m_grant;
-    wire [ADDR_W+RW-1:0] b2m_addr;
-    wire [DATA_W-1:0]    b2m_wdata;
-    wire                 b2m_valid;
-    wire [DATA_W-1:0]    b2m_rdata;
-    wire                 b2m_ready;
-    wire                 b2m_rvalid;
+    (* MARK_DEBUG = "TRUE" *) wire                 b2m_req, b2m_grant;
+    (* MARK_DEBUG = "TRUE" *) wire [ADDR_W+RW-1:0] b2m_addr;
+    (* MARK_DEBUG = "TRUE" *) wire [DATA_W-1:0]    b2m_wdata;
+    (* MARK_DEBUG = "TRUE" *) wire                 b2m_valid;
+    (* MARK_DEBUG = "TRUE" *)wire [DATA_W-1:0]    b2m_rdata;
+    (* MARK_DEBUG = "TRUE" *)wire                 b2m_ready;
+    (* MARK_DEBUG = "TRUE" *)wire                 b2m_rvalid;
     wire                 b2_arb_req, b2_arb_grant;
 
     master_bridge #(
@@ -155,13 +155,13 @@ module bus_interconnect_serial (
     );
     assign b2_arb_grant = b2_arb_req;
 
-    wire                 b1s_req, b1s_grant;
-    wire [ADDR_W+RW-1:0] b1s_addr;
-    wire [DATA_W-1:0]    b1s_wdata;
-    wire                 b1s_valid;
-    wire [DATA_W-1:0]    b1s_rdata;
-    wire                 b1s_ready;
-    wire                 b1s_rvalid;
+    (* MARK_DEBUG = "TRUE" *) wire                 b1s_req, b1s_grant;
+    (* MARK_DEBUG = "TRUE" *)wire [ADDR_W+RW-1:0] b1s_addr;
+    (* MARK_DEBUG = "TRUE" *)wire [DATA_W-1:0]    b1s_wdata;
+    (* MARK_DEBUG = "TRUE" *)wire                 b1s_valid;
+    (* MARK_DEBUG = "TRUE" *)wire [DATA_W-1:0]    b1s_rdata;
+    (* MARK_DEBUG = "TRUE" *)wire                 b1s_ready;
+    (* MARK_DEBUG = "TRUE" *)wire                 b1s_rvalid;
 
     slave_bridge #(
         .ADDR_W (ADDR_W),

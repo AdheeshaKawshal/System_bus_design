@@ -18,13 +18,18 @@ module led_display #(
 
     output reg  [3:0]        led
 );
-
+    reg ready;
+    reg blink;
     always @(posedge clk or negedge rst) begin
         if (!rst) begin
             led <= 4'b0;
-        end else if (valid_i && ready_i) begin
-            led <= we_i ? wdata_i[3:0] : rdata_i[3:0];
+            ready<= 1'b0;
+            blink <= 1'b0;
+        end else if (1) begin
+            blink <= !blink;
+            led <= wdata_i[3:0];
         end
+        ready <= ready_i;
     end
 
 endmodule
