@@ -49,7 +49,7 @@ module slave_bridge #(
     input  wire                 addr_rx_i,
     input  wire                 wdata_rx_i,
     output wire                 link_rx_busy_o,    // high from the request onward, until the transaction completes
-    output wire                 status_tx_o,
+    output wire                 rdata_tx_o,
     output wire                 link_tx_busy_o,    // high while the rvalid+rdata word is shifting out
     output wire                 ready_tx_o         // stretched: transaction complete
 );
@@ -219,7 +219,7 @@ module slave_bridge #(
         .data_en  (tx_data_en),
         .clk      (clk),
         .rstn     (rst),
-        .tx       (status_tx_o),
+        .tx       (rdata_tx_o),
         .tx_busy  (link_tx_busy_o)
     );
 

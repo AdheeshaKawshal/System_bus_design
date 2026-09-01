@@ -133,7 +133,7 @@ module top_bridge_test (
         .addr_rx_i      (link_addr_tx),
         .wdata_rx_i     (link_wdata_tx),
         .link_rx_busy_o (),
-        .status_tx_o    (link_status_tx),
+        .rdata_tx_o     (link_status_tx),
         .link_tx_busy_o (),
         .ready_tx_o     (link_ready_tx)
     );

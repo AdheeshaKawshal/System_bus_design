@@ -1,9 +1,7 @@
-module master #(
+module master_uart #(
     parameter ADDR_W = 15,
     parameter DATA_W = 8,
     parameter RW      = 1,
-    parameter NUM_TXN  = 8,
-    parameter START_TXN     = 0,  // tx_ptr's starting index - which transaction in the table to begin from
     parameter REQ_DELAY    = 0,  // clock cycles to hold off after reset before req_o is ever asserted
     parameter ACTIVE_TIMEOUT = 16,  // give up waiting for ready_i after this many granted cycles
     parameter BACKOFF_DELAY  = 5   // cycles to hold off before retrying a timed-out transaction
@@ -25,7 +23,23 @@ module master #(
     (* MARK_DEBUG = "TRUE" *) input wire [DATA_W-1:0] rdata_i,
     (* MARK_DEBUG = "TRUE" *) input wire ready_i,
     input wire ext_valid_o,
-    input wire rvalid_i   // pulses high alongside rdata_i when the slave's read data is valid
+    input wire rvalid_i,   // pulses high alongside rdata_i when the slave's read data is valid
+
+    // ------------------------------------------------------------------
+    // UART-side transaction interface. Replaces the old hardcoded
+    // addr_mem/wdata_mem/we_mem/tx_ptr table: UART_TOP now supplies one
+    // transaction at a time and watches txn_ready_o to know when this
+    // master is free to accept the next one.
+    // ------------------------------------------------------------------
+    input  wire              txn_valid_i,   // pulse: latch txn_*_i and start it
+    input  wire [ADDR_W-1:0] txn_addr_i,
+    input  wire              txn_we_i,
+    input  wire [DATA_W-1:0] txn_wdata_i,
+    output wire              txn_ready_o,   // high only while idle and free to accept a new txn
+
+    output reg  [DATA_W-1:0] rdata_o,       // valid for one cycle when rdata_valid_o pulses
+    output reg               rdata_valid_o, // pulses once per completed read
+    output reg               txn_done_o     // pulses once per completed transaction (read or write)
 );
     // FSM states
     localparam WAIT    = 3'd0,
@@ -38,17 +52,19 @@ module master #(
     reg [31:0] delay_cnt;
     reg [31:0] timeout_cnt;   // cycles spent granted in ACTIVE without seeing ready_i
 
-    // Transaction memory: type (we), addr, wdata and space to store read results
-    reg [DATA_W-1:0] wdata_mem [0:NUM_TXN-1];
-    reg [ADDR_W-1:0] addr_mem  [0:NUM_TXN-1];
-    reg              we_mem    [0:NUM_TXN-1];
-    reg [DATA_W-1:0] rdata_mem [0:NUM_TXN-1];
+    // Latched copy of the transaction currently in flight (replaces the
+    // old addr_mem/wdata_mem/we_mem[tx_ptr] lookups). txn_active_r stays
+    // set across a BACKOFF retry so the same transaction is re-issued
+    // without needing a fresh txn_valid_i pulse from UART_TOP.
+    reg [ADDR_W-1:0] cur_addr;
+    reg              cur_we;
+    reg [DATA_W-1:0] cur_wdata;
+    reg              txn_active_r;
 
-    // current transaction pointer and count
-    reg [$clog2(NUM_TXN)-1:0] tx_ptr;
-    integer i;
+    // Only accept a new transaction while sitting idle with nothing
+    // in flight (i.e. not mid-retry after a BACKOFF).
+    assign txn_ready_o = (state == IDLE) && !txn_active_r;
 
-    // On reset populate a simple transaction table (can be customized for simulation)
     always @(posedge clk or negedge rst) begin
         if (!rst) begin
             state       <= WAIT;
@@ -58,56 +74,52 @@ module master #(
             valid_o <= 1'b0;
             addr_o  <= {(ADDR_W+RW){1'b0}};
             wdata_o <= {DATA_W{1'b0}};
-            tx_ptr  <= START_TXN;
-            for (i = 0; i < NUM_TXN; i = i + 1) begin
-                addr_mem[i]  <= {ADDR_W{1'b0}};
-                wdata_mem[i] <= {DATA_W{1'b0}};
-                we_mem[i]    <= 1'b0;
-                rdata_mem[i] <= {DATA_W{1'b0}};
-            end
 
-            // Example transaction sequence (modify as needed).
-            // addr_o encoding (matches addr_decoder): [14]=0 internal, [13:12]=slave sel, [11:0]=slave addr
-            //   slave1 -> sel 00 -> addr_mem[13:12]=00 (e.g. 15'h0xxx)
-            //   slave2 -> sel 01 -> addr_mem[13:12]=01 (e.g. 15'h1xxx)
-            //
-            // 0: write slave1 addr 0x001 <- 0x11
-            // 1: read  slave1 addr 0x001
-            // 2: write slave1 addr 0x005 <- 0x22
-            // 3: read  slave1 addr 0x005
-            // 4: write slave2 addr 0x001 <- 0x33
-            // 5: read  slave2 addr 0x001
-            // 6: write slave2 addr 0x008 <- 0x44
-            // 7: read  slave2 addr 0x008
-            addr_mem[0]  <= 15'h2001; wdata_mem[0] <= 8'h11; we_mem[0] <= 1'b1;
-            addr_mem[1]  <= 15'h2001; wdata_mem[1] <= {DATA_W{1'b0}}; we_mem[1] <= 1'b0;
-            addr_mem[2]  <= 15'h0005; wdata_mem[2] <= 8'h22; we_mem[2] <= 1'b1;
-            addr_mem[3]  <= 15'h0005; wdata_mem[3] <= {DATA_W{1'b0}}; we_mem[3] <= 1'b0;
-            addr_mem[4]  <= 15'h2001; wdata_mem[4] <= 8'h33; we_mem[4] <= 1'b1;
-            addr_mem[5]  <= 15'h2001; wdata_mem[5] <= {DATA_W{1'b0}}; we_mem[5] <= 1'b0;
-            addr_mem[6]  <= 15'h1008; wdata_mem[6] <= 8'h44; we_mem[6] <= 1'b1;
-            addr_mem[7]  <= 15'h1008; wdata_mem[7] <= {DATA_W{1'b0}}; we_mem[7] <= 1'b0;
+            cur_addr     <= {ADDR_W{1'b0}};
+            cur_we       <= 1'b0;
+            cur_wdata    <= {DATA_W{1'b0}};
+            txn_active_r <= 1'b0;
+
+            rdata_o       <= {DATA_W{1'b0}};
+            rdata_valid_o <= 1'b0;
+            txn_done_o    <= 1'b0;
 
         end else begin
+            // rdata_valid_o / txn_done_o are single-cycle pulses; default
+            // them low each cycle and let the ACTIVE branch below assert
+            // them explicitly on completion. req_o/valid_o/state keep the
+            // original level-signal behavior (no default assignment).
+            rdata_valid_o <= 1'b0;
+            txn_done_o    <= 1'b0;
+
             case (state)
                 WAIT: begin
                     // Hold off req_o until REQ_DELAY cycles have elapsed
                     // since reset released.
                     if (delay_cnt >= REQ_DELAY) begin
                         state <= IDLE;
-                        delay_cnt <= 0;
                     end else begin
                         delay_cnt <= delay_cnt + 1;
                     end
                 end
 
                 IDLE: begin
-                    // If there are remaining transactions, request the bus
-                    if (tx_ptr < NUM_TXN) begin
+                    if (txn_active_r) begin
+                        // Retrying the same pending transaction after a
+                        // BACKOFF timeout: cur_addr/cur_we/cur_wdata are
+                        // already latched from before, just re-request.
                         req_o <= 1'b1;
                         state <= REQUEST;
+                    end else if (txn_valid_i) begin
+                        // Accept a new transaction from UART_TOP.
+                        cur_addr     <= txn_addr_i;
+                        cur_we       <= txn_we_i;
+                        cur_wdata    <= txn_wdata_i;
+                        txn_active_r <= 1'b1;
+                        req_o        <= 1'b1;
+                        state        <= REQUEST;
                     end else begin
-                        // no more transactions: stay idle and keep outputs low
+                        // nothing to do: stay idle and keep outputs low
                         req_o   <= 1'b0;
                         valid_o <= 1'b0;
                     end
@@ -116,9 +128,9 @@ module master #(
                 REQUEST: begin
                     // drive request until grant is received
                     if (grant_i) begin
-                        // drive transaction signals from memory (we packed into addr_o's LSB)
-                        addr_o  <= {addr_mem[tx_ptr], we_mem[tx_ptr]};
-                        wdata_o <= wdata_mem[tx_ptr];
+                        // drive transaction signals from the latched txn (we packed into addr_o's LSB)
+                        addr_o  <= {cur_addr, cur_we};
+                        wdata_o <= cur_wdata;
                         valid_o <= 1'b1;
                         state   <= ACTIVE;
                     end
@@ -128,22 +140,25 @@ module master #(
                     // Keep valid asserted while waiting for slave ready
                     if (ready_i) begin
                         // capture read data only once the slave flags it valid
-                        if (!we_mem[tx_ptr] && rvalid_i) begin
-                            rdata_mem[tx_ptr] <= rdata_i;
+                        if (!cur_we && rvalid_i) begin
+                            rdata_o       <= rdata_i;
+                            rdata_valid_o <= 1'b1;
                         end
 
-                        // transaction complete: advance pointer and release bus
-                        tx_ptr      <= tx_ptr + 1;
-                        req_o       <= 1'b0;
-                        valid_o     <= 1'b0;
-                        timeout_cnt <= 0;
-                        state       <= WAIT;
+                        // transaction complete: release bus and go idle
+                        txn_active_r <= 1'b0;
+                        txn_done_o   <= 1'b1;
+                        req_o        <= 1'b0;
+                        valid_o      <= 1'b0;
+                        timeout_cnt  <= 0;
+                        state        <= IDLE;
                     end
                     else if (timeout_cnt >= ACTIVE_TIMEOUT) begin
                         // Gave up waiting for ready_i (e.g. stuck behind a
                         // stalled cross-bus grant): drop off the bus and
                         // retry the same transaction after a backoff delay
                         // instead of holding the arbiter hostage forever.
+                        // txn_active_r stays set: same transaction retried.
                         req_o       <= 1'b0;
                         valid_o     <= 1'b0;
                         timeout_cnt <= 0;
@@ -155,8 +170,8 @@ module master #(
 
                         if (!ext_valid_o) begin
                             // keep driving valid and data until slave signals ready
-                            addr_o  <= {addr_mem[tx_ptr], we_mem[tx_ptr]};
-                            wdata_o <= wdata_mem[tx_ptr];
+                            addr_o  <= {cur_addr, cur_we};
+                            wdata_o <= cur_wdata;
                             valid_o <= 1'b1;
                         end
                     end
@@ -167,7 +182,7 @@ module master #(
                     // retry the same (still-pending) transaction.
                     if (delay_cnt >= BACKOFF_DELAY) begin
                         delay_cnt <= 0;
-                        state     <= WAIT;
+                        state     <= IDLE;
                     end else begin
                         delay_cnt <= delay_cnt + 1;
                     end

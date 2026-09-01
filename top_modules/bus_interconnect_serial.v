@@ -101,7 +101,7 @@ module bus_interconnect_serial (
         .addr_rx_i      (link12_addr_tx),
         .wdata_rx_i     (link12_wdata_tx),
         .link_rx_busy_o (),
-        .status_tx_o    (link12_status_tx),
+        .rdata_tx_o     (link12_status_tx),
         .link_tx_busy_o (),
         .ready_tx_o     (link12_ready_tx)
     );
@@ -187,7 +187,7 @@ module bus_interconnect_serial (
         .addr_rx_i      (link21_addr_tx),
         .wdata_rx_i     (link21_wdata_tx),
         .link_rx_busy_o (),
-        .status_tx_o    (link21_status_tx),
+        .rdata_tx_o     (link21_status_tx),
         .link_tx_busy_o (),
         .ready_tx_o     (link21_ready_tx)
     );
