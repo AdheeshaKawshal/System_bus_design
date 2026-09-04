@@ -316,7 +316,7 @@ module serial_system_bus (
         .DATA_W (DATA_W),
         .RW     (RW)
     ) u_m1_select_mux (
-        .sel (1'b0),
+        .sel (1'b1),
 
         .reqA    (m1L_req),
         .grantA  (m1L_grant),

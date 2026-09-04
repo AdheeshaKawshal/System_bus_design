@@ -79,12 +79,12 @@ module master #(
             // 5: read  slave2 addr 0x001
             // 6: write slave2 addr 0x008 <- 0x44
             // 7: read  slave2 addr 0x008
-            addr_mem[0]  <= 15'h2001; wdata_mem[0] <= 8'h11; we_mem[0] <= 1'b1;
-            addr_mem[1]  <= 15'h2001; wdata_mem[1] <= {DATA_W{1'b0}}; we_mem[1] <= 1'b0;
-            addr_mem[2]  <= 15'h0005; wdata_mem[2] <= 8'h22; we_mem[2] <= 1'b1;
-            addr_mem[3]  <= 15'h0005; wdata_mem[3] <= {DATA_W{1'b0}}; we_mem[3] <= 1'b0;
-            addr_mem[4]  <= 15'h2001; wdata_mem[4] <= 8'h33; we_mem[4] <= 1'b1;
-            addr_mem[5]  <= 15'h2001; wdata_mem[5] <= {DATA_W{1'b0}}; we_mem[5] <= 1'b0;
+            addr_mem[0]  <= 15'h4001; wdata_mem[0] <= 8'h11; we_mem[0] <= 1'b1;
+            addr_mem[1]  <= 15'h4001; wdata_mem[1] <= {DATA_W{1'b0}}; we_mem[1] <= 1'b0;
+            addr_mem[2]  <= 15'h5005; wdata_mem[2] <= 8'h22; we_mem[2] <= 1'b1;
+            addr_mem[3]  <= 15'h5005; wdata_mem[3] <= {DATA_W{1'b0}}; we_mem[3] <= 1'b0;
+            addr_mem[4]  <= 15'h4001; wdata_mem[4] <= 8'h33; we_mem[4] <= 1'b1;
+            addr_mem[5]  <= 15'h5001; wdata_mem[5] <= {DATA_W{1'b0}}; we_mem[5] <= 1'b0;
             addr_mem[6]  <= 15'h1008; wdata_mem[6] <= 8'h44; we_mem[6] <= 1'b1;
             addr_mem[7]  <= 15'h1008; wdata_mem[7] <= {DATA_W{1'b0}}; we_mem[7] <= 1'b0;
 
