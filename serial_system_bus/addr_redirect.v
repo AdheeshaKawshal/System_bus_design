@@ -1,7 +1,7 @@
 module addr_redirect #(
     parameter NUM_SLAVES = 3,
     parameter SEL_W      = 2,
-    parameter TAP_BITS   = SEL_W + 1,  // internal-flag + slave-select bits (3)
+    parameter TAP_BITS   = SEL_W + 1,  // external-flag + slave-select bits (3)
     parameter OUT_DELAY  = 4           // cycles the whole frame is held back, >= TAP_BITS+1 so slave_sel* is stable first
 )(
     input  wire clk,
@@ -35,21 +35,30 @@ module addr_redirect #(
     reg                  tap_capturing;
     reg                  early_valid;
     reg [TAP_BITS-1:0]   early_bits;
+    reg                  frame_valid_in_d;
 
     wire [TAP_BITS-1:0] tap_shift_next = {tap_shift[TAP_BITS-2:0], serial_in};
+    // Only start a capture on frame_valid_in's rising edge, not merely
+    // while tap_capturing happens to be low - guards against frame_valid_in
+    // being (or becoming) high for more than one cycle re-triggering a
+    // fresh 3-bit capture partway through the same 24-bit frame instead of
+    // waiting for the next frame.
+    wire frame_valid_in_rise = frame_valid_in && !frame_valid_in_d;
 
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            tap_shift     <= {TAP_BITS{1'b0}};
-            tap_count     <= {TAP_CNT_W{1'b0}};
-            tap_capturing <= 1'b0;
-            early_valid   <= 1'b0;
-            early_bits    <= {TAP_BITS{1'b0}};
+            tap_shift        <= {TAP_BITS{1'b0}};
+            tap_count        <= {TAP_CNT_W{1'b0}};
+            tap_capturing     <= 1'b0;
+            early_valid       <= 1'b0;
+            early_bits        <= {TAP_BITS{1'b0}};
+            frame_valid_in_d  <= 1'b0;
         end else begin
-            early_valid <= 1'b0;
+            early_valid      <= 1'b0;
+            frame_valid_in_d <= frame_valid_in;
 
             if (!tap_capturing) begin
-                if (frame_valid_in) begin
+                if (frame_valid_in_rise) begin
                     tap_shift     <= tap_shift_next;
                     tap_count     <= {{(TAP_CNT_W-1){1'b0}}, 1'b1};
                     tap_capturing <= 1'b1;
@@ -97,7 +106,7 @@ module addr_redirect #(
             slave_sel3   <= dec_sel3;
             ext_redirect <= dec_ext_redirect;
             addr_invalid <= dec_addr_invalid;
-        end else if (frame_valid_in && !tap_capturing) begin
+        end else if (frame_valid_in_rise) begin
             slave_sel1   <= 1'b0;
             slave_sel2   <= 1'b0;
             slave_sel3   <= 1'b0;

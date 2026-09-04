@@ -20,14 +20,27 @@ module tb_serial_system_bus;
 
     integer errors;
 
-    serial_bus_top #(
-        .ADDR_W     (15),
-        .DATA_W     (8),
-        .RW         (1),
-        .NUM_SLAVES (3)
-    ) dut (
+    // serial_2bus_top's 4-pins-per-board UART GPIOs are no longer crossed
+    // internally - this testbench is "the outside world" for it now, so it
+    // supplies the same bus0<->bus1 crossing that used to be internal
+    // wiring: each board's bb_master_core TX goes to the OTHER board's
+    // bb_slave_core RX, and vice versa.
+    wire bus0_mc_tx, bus0_sc_tx;
+    wire bus1_mc_tx, bus1_sc_tx;
+
+    serial_2bus_top  dut (
         .clk (clk),
-        .rst (rst)
+        .rst (rst),
+
+        .bus0_mc_uart_tx_o (bus0_mc_tx),
+        .bus0_mc_uart_rx_i (bus1_sc_tx),
+        .bus0_sc_uart_tx_o (bus0_sc_tx),
+        .bus0_sc_uart_rx_i (bus1_mc_tx),
+
+        .bus1_mc_uart_tx_o (bus1_mc_tx),
+        .bus1_mc_uart_rx_i (bus0_sc_tx),
+        .bus1_sc_uart_tx_o (bus1_sc_tx),
+        .bus1_sc_uart_rx_i (bus0_mc_tx)
     );
 
     // 100 MHz clock
@@ -79,24 +92,27 @@ module tb_serial_system_bus;
         //   5: read  slave2 0x001 (never written on slave2 - not checked)
         //   6: write slave2 0x008 <- 0x44   7: read slave2 0x008 (expect 0x44)
         // ---------------------------------------------------------
-        $display("---- Master 0 ----");
-        check_byte("M0 tx1 (slave1 0x001)", dut.u_master0.rdata_mem[1], 8'h11);
-        check_byte("M0 tx3 (slave1 0x005)", dut.u_master0.rdata_mem[3], 8'h22);
-        check_byte("M0 tx7 (slave2 0x008)", dut.u_master0.rdata_mem[7], 8'h44);
+        $display("---- Bus 0 / Master 0 ----");
+        check_byte("Bus0 M0 tx1 (slave1 0x001)", dut.u_bus0.u_master0.rdata_mem[1], 8'h11);
+        check_byte("Bus0 M0 tx3 (slave1 0x005)", dut.u_bus0.u_master0.rdata_mem[3], 8'h22);
+        check_byte("Bus0 M0 tx7 (slave2 0x008)", dut.u_bus0.u_master0.rdata_mem[7], 8'h44);
+
+        $display("---- Bus 1 / Master 0 ----");
+        check_byte("Bus1 M0 tx1 (slave1 0x001)", dut.u_bus1.u_master0.rdata_mem[1], 8'h11);
+        check_byte("Bus1 M0 tx3 (slave1 0x005)", dut.u_bus1.u_master0.rdata_mem[3], 8'h22);
+        check_byte("Bus1 M0 tx7 (slave2 0x008)", dut.u_bus1.u_master0.rdata_mem[7], 8'h44);
 
         // ---------------------------------------------------------
-        // Master 1 runs the SAME demo table (master.v's reset block is not
-        // parameterized per-instance) through the shared m1_select_mux
-        // source A path - same expected results, just via slave1/slave2's
-        // OWN memories (a separate physical slave1/slave2 than Master 0
-        // talks to would give the same table the same results here, since
-        // there's only one slave1/slave2 instance and both masters
-        // contend for the same bus to reach it).
+        // dut is now serial_2bus_top, wrapping two serial_bus_top boards
+        // (u_bus0/u_bus1) chained to each other over UART - see
+        // serial_2bus_top.v. Each bus's M1 slot is bb_master_core.v, not a
+        // local master with its own transaction table - it only relays
+        // whatever the OTHER board's bb_slave_core forwards it, so there is
+        // no rdata_mem to check there. Nothing on Master 0's table is
+        // REMOTE-flagged (every entry is a genuine internal slave1/slave2
+        // access), so the UART bridge path is never exercised by this
+        // testbench as written.
         // ---------------------------------------------------------
-        $display("---- Master 1 ----");
-        check_byte("M1 tx1 (slave1 0x001)", dut.u_master1.rdata_mem[1], 8'h11);
-        check_byte("M1 tx3 (slave1 0x005)", dut.u_master1.rdata_mem[3], 8'h22);
-        check_byte("M1 tx7 (slave2 0x008)", dut.u_master1.rdata_mem[7], 8'h44);
 
         if (errors == 0)
             $display("\n==== ALL CHECKS PASSED ====");

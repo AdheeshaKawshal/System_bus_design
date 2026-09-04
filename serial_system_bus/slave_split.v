@@ -92,6 +92,7 @@ module slave_split #(
     reg [3:0] addr_latch;
     reg [DATA_W-1:0] rdata_reg;
     reg              ser_trigger;
+    integer          mem_i;
 
     always @(posedge clk or negedge rst) begin
         if (!rst) begin
@@ -102,6 +103,9 @@ module slave_split #(
             addr_latch  <= 4'b0;
             rdata_reg   <= {DATA_W{1'b0}};
             ser_trigger <= 1'b0;
+            for (mem_i = 0; mem_i < 16; mem_i = mem_i + 1) begin
+                mem[mem_i] <= {DATA_W{1'b0}};
+            end
         end else begin
             // default: all pulses low unless set below
             split_o     <= 1'b0;

@@ -1,28 +1,34 @@
-// serial_bus_top: top-level integration for this folder - wires the 2
-// masters, the bus (serial_system_bus.v), and the 3 slaves together for
-// simulation. serial_system_bus.v itself is untouched by this file; it's
-// just instantiated like any other submodule.
-//
-// Each physical slave select is dedicated to exactly one device: slave_sel1
-// -> a plain slave (slave.v), slave_sel2 -> a split-capable slave
-// (slave_split.v), slave_sel3 -> slave_bridge.v. slave_bridge still
-// receives ext_redirect as a dedicated informational line (see
-// addr_decoder.v/slave_bridge.v) even though it no longer shares its select
-// with anything. Master 1's physical port is shared, via m1_select_mux,
-// between a local master instance (source A) and slave_bridge acting as a
-// master when it has a relay in flight (source B) - so a bridged request
-// loops back onto this very bus through Master 1, letting the whole bridge
-// path be exercised in simulation without a second physical board. Fixed
-// priority (m1_sel = reqB) hands the shared port to the bridge whenever it
-// has work pending, otherwise to the local master.
+
+// masterv2.v/slavev2.v's inner modules (used by bb_master_core.v/
+// bb_slave_core.v) are named bb_master_txn_core/bb_local_regfile - renamed
+// from their original master/slave to avoid colliding with this file's own
+// master.v/slave.v (used below for u_master0/u_slave0/u_slave1).
 module serial_bus_top #(
     parameter ADDR_W     = 15,
     parameter DATA_W     = 8,
     parameter RW         = 1,
-    parameter NUM_SLAVES = 3
+    parameter NUM_SLAVES = 3,
+
+    // Master 0's own timing (plus its starting transaction index), exposed
+    // so each bus instance (e.g. in serial_2bus_top.v) can configure its
+    // Master 0 independently of the other bus's. No ACTIVE_TIMEOUT/
+    // BACKOFF_DELAY here - master.v's read path now just waits
+    // indefinitely for rvalid, no retry timeout.
+    parameter M0_START_TXN      = 0,
+    parameter M0_REQ_DELAY      = 0,
+    parameter M0_WRITE_DELAY    = 26
 )(
     input wire clk,
-    input wire rst
+    input wire rst,
+
+    // ---- UART links out to another board's serial_bus_top, for chaining
+    // two buses together back and forth (see serial_2bus_top.v) - this
+    // board's bb_master_core and bb_slave_core each get their own external
+    // TX/RX pair instead of self-looping to each other internally.
+    output wire mc_uart_tx_o,  // this board's bb_master_core TX -> the other board's bb_slave_core RX
+    input  wire mc_uart_rx_i,  // this board's bb_master_core RX <- the other board's bb_slave_core TX
+    output wire sc_uart_tx_o,  // this board's bb_slave_core TX -> the other board's bb_master_core RX
+    input  wire sc_uart_rx_i   // this board's bb_slave_core RX <- the other board's bb_master_core TX
 );
 
     // ---------------------------------------------------------
@@ -32,9 +38,12 @@ module serial_bus_top #(
     wire addr_data_M0, rdata_M0_ser;
 
     master #(
-        .ADDR_W (ADDR_W),
-        .DATA_W (DATA_W),
-        .RW     (RW)
+        .ADDR_W         (ADDR_W),
+        .DATA_W         (DATA_W),
+        .RW             (RW),
+        .START_TXN      (M0_START_TXN),
+        .REQ_DELAY      (M0_REQ_DELAY),
+        .WRITE_DELAY    (M0_WRITE_DELAY)
     ) u_master0 (
         .clk           (clk),
         .rst           (rst),
@@ -48,59 +57,38 @@ module serial_bus_top #(
     );
 
     // ---------------------------------------------------------
-    // Master 1: shared between a local master (source A) and slave_bridge
-    // acting as a master when relaying a bridged request (source B).
+    // Master 1's slot is bb_master_core.v - not a local master with its
+    // own transaction table. It plugs into serial_system_bus's M1 port
+    // with the same shape master.v uses; its UART side now goes out to
+    // mc_uart_tx_o/mc_uart_rx_i instead of looping back to this board's own
+    // bb_slave_core, so a request it issues onto M1 originates from
+    // whatever the OTHER connected board's bb_slave_core relayed in over
+    // that link (see serial_2bus_top.v for the actual cross-connection).
     // ---------------------------------------------------------
     wire req_M1, grant_M1, frame_valid_M1, mready_M1, rvalid_M1;
     wire addr_data_M1, rdata_M1_ser;
 
-    wire reqA, grantA, frame_valid_A, mreadyA, rvalidA, addr_data_A, rdata_A_ser;
-    wire reqB, grantB, frame_valid_B, mreadyB, rvalidB, addr_data_B, rdata_B_ser;
-
-    wire m1_sel = reqB;
-
-    master #(
+    bb_master_core #(
         .ADDR_W (ADDR_W),
         .DATA_W (DATA_W),
         .RW     (RW)
-    ) u_master1 (
+    ) u_bb_master_core (
         .clk           (clk),
         .rst           (rst),
-        .req_o         (reqA),
-        .grant_i       (grantA),
-        .addr_data_o   (addr_data_A),
-        .frame_valid_o (frame_valid_A),
-        .mready_o      (mreadyA),
-        .rdata_ser_i   (rdata_A_ser),
-        .rvalid_i      (rvalidA)
-    );
 
-    m1_select_mux u_m1_select_mux (
-        .sel (m1_sel),
+        .uart_rx_i     (mc_uart_rx_i),
+        .uart_tx_o     (mc_uart_tx_o),
 
-        .reqA          (reqA),
-        .grantA        (grantA),
-        .addr_data_A   (addr_data_A),
-        .frame_valid_A (frame_valid_A),
-        .rdata_A_ser   (rdata_A_ser),
-        .mreadyA       (mreadyA),
-        .rvalidA       (rvalidA),
+        .req_o         (req_M1),
+        .grant_i       (grant_M1),
+        .addr_data_o   (addr_data_M1),
+        .frame_valid_o (frame_valid_M1),
+        .mready_o      (mready_M1),
+        .rdata_ser_i   (rdata_M1_ser),
+        .rvalid_i      (rvalid_M1),
 
-        .reqB          (reqB),
-        .grantB        (grantB),
-        .addr_data_B   (addr_data_B),
-        .frame_valid_B (frame_valid_B),
-        .rdata_B_ser   (rdata_B_ser),
-        .mreadyB       (mreadyB),
-        .rvalidB       (rvalidB),
-
-        .req_m1         (req_M1),
-        .grant_m1       (grant_M1),
-        .addr_data_m1   (addr_data_M1),
-        .frame_valid_m1 (frame_valid_M1),
-        .rdata_m1_ser   (rdata_M1_ser),
-        .mready_m1      (mready_M1),
-        .rvalid_m1      (rvalid_M1)
+        .overflow_o    (),
+        .frame_err_o   ()
     );
 
     // ---------------------------------------------------------
@@ -201,30 +189,28 @@ module serial_bus_top #(
     );
 
     // ---------------------------------------------------------
-    // Slave 2 (slave_sel3): dedicated to slave_bridge - nothing else
-    // shares this select anymore.
+    // Slave 2 (slave_sel3): dedicated to bb_slave_core - nothing else
+    // shares this select anymore. ext_redirect is no longer consumed here;
+    // bb_slave_core derives its own LOCAL/REMOTE split from bit 14 of the
+    // forwarded address instead (the same bit addr_decoder used to route
+    // here in the first place). Its UART side goes out to sc_uart_tx_o/
+    // sc_uart_rx_i - the OTHER connected board's bb_master_core, not this
+    // board's own (see serial_2bus_top.v).
     // ---------------------------------------------------------
-    slave_bridge #(
-        .ADDR_W (ADDR_W),
-        .DATA_W (DATA_W),
-        .RW     (RW)
-    ) u_slave2 (
-        .clk            (clk),
-        .rst            (rst),
-        .cs_i           (slave_sel3),
-        .ext_redirect_i (ext_redirect),
-        .addr_data_i    (addr_data_bus),
-        .valid_i        (valid_bus),
-        .rdata_o_ser    (rdata_S2_ser),
-        .rvalid_o       (rvalid_S2),
+    bb_slave_core u_bb_slave_core (
+        .clk         (clk),
+        .rst         (rst),
 
-        .reqB          (reqB),
-        .grantB        (grantB),
-        .addr_data_B   (addr_data_B),
-        .frame_valid_B (frame_valid_B),
-        .rdata_B_ser   (rdata_B_ser),
-        .mreadyB       (mreadyB),
-        .rvalidB       (rvalidB)
+        .cs_i        (slave_sel3),
+        .addr_data_i (addr_data_bus),
+        .valid_i     (valid_bus),
+        .rdata_o_ser (rdata_S2_ser),
+        .rvalid_o    (rvalid_S2),
+
+        .uart_tx_o   (sc_uart_tx_o),
+        .uart_rx_i   (sc_uart_rx_i),
+
+        .timeout_o   ()
     );
 
 endmodule

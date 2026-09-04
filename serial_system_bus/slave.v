@@ -49,11 +49,15 @@ module slave #(
     // ---------------------------------------------------------
     reg [DATA_W-1:0] rdata_reg;
     reg              ser_trigger;
+    integer          mem_i;
 
     always @(posedge clk or negedge rst) begin
         if (!rst) begin
             rdata_reg   <= {DATA_W{1'b0}};
             ser_trigger <= 1'b0;
+            for (mem_i = 0; mem_i < 16; mem_i = mem_i + 1) begin
+                mem[mem_i] <= {DATA_W{1'b0}};
+            end
         end else begin
             ser_trigger <= 1'b0;
             if (frame_done) begin

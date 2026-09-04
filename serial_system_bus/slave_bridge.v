@@ -4,38 +4,42 @@
 // Description:
 //   Sits behind slave_sel3, which is now dedicated to this module alone
 //   (slave 0 = plain slave.v, slave 1 = slave_split.v, slave 2/slave_sel3 =
-//   this module - nothing else shares slave_sel3 anymore). ext_redirect_i
-//   is still wired in as its own dedicated line (unconditional passthrough
-//   of the request frame's internal-flag bit, from addr_decoder.v/
-//   addr_redirect.v - see those for why it's still called ext_redirect),
-//   so this module knows how the original address was tagged even though
-//   it no longer needs that bit to decide whether it's selected.
+//   this module - nothing else shares slave_sel3 anymore).
 //
-//   Architecturally this is a small one-shot master: it captures the
-//   incoming 24-bit {addr,we,wdata} frame off its slave-side port exactly
-//   like slave.v does, then re-issues that same frame as a request on its
-//   own master-side "B" port (the shape m1_select_mux.v's Source B
-//   expects). Once the B-side response comes back, it relays that byte
-//   back out its own slave-side response port with a Serializer, the same
-//   way slave.v answers a read.
-//
-//   A bridged transaction ALWAYS gets relayed back, whether the original
-//   request was a read or a write: the B-side round trip has to complete
-//   before this bridge is free to be reused for the next request anyway,
-//   and the bus (via mready_B) always expects it to be a well-behaved
-//   master, so we just always shift a response byte back (0 for a write,
-//   the real read data for a read).
+//   slave_sel3 is reached two different ways (see addr_decoder.v): a
+//   genuine internal address with sel==10, or any address whose
+//   external_flag bit is set (routed here regardless of its sel bits).
+//   ext_redirect_i tells the two apart:
+//     - ext_redirect_i == 0 (internal, sel==10): serviced directly out of
+//       local storage (mem[]), exactly like slave.v - no B-side relay, and
+//       (like slave.v) a write gets no response at all.
+//     - ext_redirect_i == 1 (external): this module acts as a small
+//       one-shot master instead - it re-issues the captured frame as a
+//       request on its own master-side "B" port (the shape
+//       m1_select_mux.v's Source B expects - a port meant to lead off this
+//       bus entirely), waits for that response, and relays the byte back
+//       out its own slave-side port with a Serializer, the same way
+//       slave.v answers a read. A bridged transaction ALWAYS gets relayed
+//       back this way, whether the original request was a read or a
+//       write: the B-side round trip has to complete before this bridge is
+//       free to be reused for the next request anyway, and the bus (via
+//       mready_B) always expects it to be a well-behaved master, so we
+//       just always shift a response byte back (0 for a write, the real
+//       read data for a read).
 //
 // FSM:
-//   IDLE     - waiting for a selected frame to finish capturing.
-//   ISSUE    - request the bus on the B side (reqB) and hold until grantB.
-//   WAIT_B   - the B-side request frame is being (self-timed) transmitted
-//              and we're waiting for its response; ACTIVE_TIMEOUT/BACKOFF
-//              guards against a response that never arrives, same pattern
-//              as master.v.
-//   BACKOFF  - short cool-off before retrying the same relay.
-//   RELAY    - shift the (possibly zero, for a write) response byte back
-//              out on the slave side.
+//   IDLE     - waiting for a selected frame to finish capturing; branches
+//              on ext_redirect_i as described above.
+//   ISSUE    - (external only) request the bus on the B side (reqB) and
+//              hold until grantB.
+//   WAIT_B   - (external only) the B-side request frame is being
+//              (self-timed) transmitted and we're waiting for its
+//              response; ACTIVE_TIMEOUT/BACKOFF guards against a response
+//              that never arrives, same pattern as master.v.
+//   BACKOFF  - (external only) short cool-off before retrying the same
+//              relay.
+//   RELAY    - (external only) shift the (possibly zero, for a write)
+//              response byte back out on the slave side.
 //   WAIT_LOW - wait for cs_i to drop before returning to IDLE, so a stale
 //              still-asserted cs_i isn't mistaken for a fresh request.
 //////////////////////////////////////////////////////////////////////////////////
@@ -53,7 +57,7 @@ module slave_bridge #(
 
     // ---------------- slave-side port (behind slave_sel3) ----------------
     input wire cs_i,            // slave_sel3 - dedicated, this module is the only thing behind it
-    input wire ext_redirect_i,  // dedicated internal-flag passthrough from addr_decoder.v - informational only, doesn't gate selection
+    input wire ext_redirect_i,  // dedicated external-flag passthrough from addr_decoder.v - informational only, doesn't gate selection
     input wire addr_data_i,     // shared serial {addr,we,wdata} request frame, MSB first
     input wire valid_i,         // shared frame-start strobe
 
@@ -144,7 +148,17 @@ module slave_bridge #(
     );
 
     // ---------------------------------------------------------
-    // Slave-side outgoing response: one Serializer, fired in RELAY.
+    // Local storage for genuine internal (sel==10) accesses - same shape as
+    // slave.v's own mem[]. Only used when ext_redirect_i is NOT set; an
+    // external-flagged access never touches this and goes out the B-side
+    // relay below instead.
+    // ---------------------------------------------------------
+    reg [DATA_W-1:0] mem [0:15];
+
+    // ---------------------------------------------------------
+    // Slave-side outgoing response: one Serializer, fired either directly
+    // for an internal read (IDLE) or after the B-side relay completes
+    // (RELAY).
     // ---------------------------------------------------------
     reg [DATA_W-1:0] relay_data;
     reg              relay_trigger;
@@ -172,6 +186,7 @@ module slave_bridge #(
     reg [2:0] state;
     reg [31:0] timeout_cnt;
     reg [31:0] delay_cnt;
+    integer    mem_i;
 
     always @(posedge clk or negedge rst) begin
         if (!rst) begin
@@ -186,6 +201,9 @@ module slave_bridge #(
             wdata_latch   <= {DATA_W{1'b0}};
             timeout_cnt   <= 0;
             delay_cnt     <= 0;
+            for (mem_i = 0; mem_i < 16; mem_i = mem_i + 1) begin
+                mem[mem_i] <= {DATA_W{1'b0}};
+            end
         end else begin
             tx_start      <= 1'b0;
             relay_trigger <= 1'b0;
@@ -194,14 +212,28 @@ module slave_bridge #(
             case (state)
                 IDLE: begin
                     if (frame_done) begin
-                        // Latch the transaction to relay and go request the
-                        // bus on the B side.
-                        addr_latch  <= addr_c;
-                        we_latch    <= we_c;
-                        wdata_latch <= wdata_c;
-                        reqB        <= 1'b1;
-                        timeout_cnt <= 0;
-                        state       <= ISSUE;
+                        if (ext_redirect_i) begin
+                            // Genuine off-bus address: latch the transaction
+                            // and go relay it out the B-side port.
+                            addr_latch  <= addr_c;
+                            we_latch    <= we_c;
+                            wdata_latch <= wdata_c;
+                            reqB        <= 1'b1;
+                            timeout_cnt <= 0;
+                            state       <= ISSUE;
+                        end else begin
+                            // Genuine internal (sel==10) access: service it
+                            // directly with local storage, same as slave.v -
+                            // no B-side relay involved. Writes get no
+                            // response, same as slave.v.
+                            if (we_c) begin
+                                mem[addr_c[3:0]] <= wdata_c;
+                            end else begin
+                                relay_data    <= mem[addr_c[3:0]];
+                                relay_trigger <= 1'b1;
+                            end
+                            state <= WAIT_LOW;
+                        end
                     end
                 end
 

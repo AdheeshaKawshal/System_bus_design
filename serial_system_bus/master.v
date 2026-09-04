@@ -5,22 +5,6 @@ module master #(
     parameter NUM_TXN  = 8,
     parameter START_TXN     = 0,  // tx_ptr's starting index - which transaction in the table to begin from
     parameter REQ_DELAY    = 0,  // clock cycles to hold off after reset before req_o is ever asserted
-    // A read round trip is: addr_serializer's frame (ADDR_W+RW+DATA_W = 24
-    // cycles) + addr_redirect's OUT_DELAY (4 cycles) + slave decode/mem
-    // access (~1 cycle) + Serializer's response frame (~8 cycles) = ~37
-    // cycles. The old default of 16 was sized for the parallel/ready bus and
-    // doesn't leave any margin here, so it's raised to 40.
-    parameter ACTIVE_TIMEOUT = 40,  // give up waiting for a read response after this many granted cycles
-    parameter BACKOFF_DELAY  = 5,   // cycles to hold off before retrying a timed-out transaction
-    // A write has no acknowledgement anymore under the fixed-latency bus, so
-    // the FSM just holds the grant for WRITE_DELAY cycles before releasing
-    // it. This has to comfortably exceed the time addr_serializer needs to
-    // finish shifting the 24-bit frame out (otherwise the grant could be
-    // dropped - and the bus handed to the other master - while this
-    // master's frame is still mid-transmission on the shared request line),
-    // plus a little slack for the frame to clear addr_redirect's delay
-    // line. 24 (frame) + margin -> 26. Must stay comfortably below
-    // ACTIVE_TIMEOUT.
     parameter WRITE_DELAY    = 26
 )(
     input wire clk,
@@ -42,12 +26,11 @@ module master #(
     localparam WAIT    = 3'd0,
                IDLE    = 3'd1,
                REQUEST = 3'd2,
-               ACTIVE  = 3'd3,
-               BACKOFF = 3'd4;   // granted but no read response ever came: dropped req, waiting to retry
+               ACTIVE  = 3'd3;
 
     reg [2:0] state;
     reg [31:0] delay_cnt;
-    reg [31:0] timeout_cnt;   // cycles spent granted in ACTIVE
+    reg [31:0] timeout_cnt;   // cycles spent granted in ACTIVE (write hold only - a read just waits for rvalid)
 
     // Transaction memory: type (we), addr, wdata and space to store read results
     reg [DATA_W-1:0] wdata_mem [0:NUM_TXN-1];
@@ -121,18 +104,6 @@ module master #(
                 rdata_mem[i] <= {DATA_W{1'b0}};
             end
 
-            // Example transaction sequence (modify as needed).
-            // addr_mem encoding (matches addr_decoder): [14]=1 internal, [13:12]=slave sel, [11:0]=slave addr
-            //   slave1 -> sel 00 -> addr_mem[13:12]=00 (e.g. 15'h4xxx)
-            //   slave2 -> sel 01 -> addr_mem[13:12]=01 (e.g. 15'h5xxx)
-            // All entries below keep [14]=1 so every transaction stays
-            // internal - an address with [14]=0 decodes external and gets
-            // routed to slave_bridge, which relays the identical address
-            // back onto this same bus, which will decode it external again,
-            // forever (no second board here to actually resolve it), so
-            // don't add a [14]=0 entry to this table without also changing
-            // the topology that consumes it.
-            //
             // 0: write slave1 addr 0x001 <- 0x11
             // 1: read  slave1 addr 0x001
             // 2: write slave1 addr 0x005 <- 0x22
@@ -141,14 +112,19 @@ module master #(
             // 5: read  slave2 addr 0x001
             // 6: write slave2 addr 0x008 <- 0x44
             // 7: read  slave2 addr 0x008
+            // Address layout is {external_flag(1), slave_sel(2), slave_addr(12)}
+            // (see addr_redirect.v/addr_decoder.v) - external_flag must be 0
+            // for a genuine on-bus slave1/slave2 access, with slave_sel
+            // picking 00=slave1, 01=slave2. slave_addr below is the plain
+            // 0x001/0x005/0x008 named in the comments above.
             addr_mem[0]  <= 15'h4001; wdata_mem[0] <= 8'h11; we_mem[0] <= 1'b1;
             addr_mem[1]  <= 15'h4001; wdata_mem[1] <= {DATA_W{1'b0}}; we_mem[1] <= 1'b0;
-            addr_mem[2]  <= 15'h5005; wdata_mem[2] <= 8'h22; we_mem[2] <= 1'b1;
-            addr_mem[3]  <= 15'h5005; wdata_mem[3] <= {DATA_W{1'b0}}; we_mem[3] <= 1'b0;
-            addr_mem[4]  <= 15'h4001; wdata_mem[4] <= 8'h33; we_mem[4] <= 1'b1;
-            addr_mem[5]  <= 15'h5001; wdata_mem[5] <= {DATA_W{1'b0}}; we_mem[5] <= 1'b0;
-            addr_mem[6]  <= 15'h5008; wdata_mem[6] <= 8'h44; we_mem[6] <= 1'b1;
-            addr_mem[7]  <= 15'h5008; wdata_mem[7] <= {DATA_W{1'b0}}; we_mem[7] <= 1'b0;
+            addr_mem[2]  <= 15'h2005; wdata_mem[2] <= 8'h22; we_mem[2] <= 1'b1;
+            addr_mem[3]  <= 15'h2005; wdata_mem[3] <= {DATA_W{1'b0}}; we_mem[3] <= 1'b0;
+            addr_mem[4]  <= 15'h0001; wdata_mem[4] <= 8'h33; we_mem[4] <= 1'b1;
+            addr_mem[5]  <= 15'h1001; wdata_mem[5] <= {DATA_W{1'b0}}; we_mem[5] <= 1'b0;
+            addr_mem[6]  <= 15'h1008; wdata_mem[6] <= 8'h44; we_mem[6] <= 1'b1;
+            addr_mem[7]  <= 15'h1008; wdata_mem[7] <= {DATA_W{1'b0}}; we_mem[7] <= 1'b0;
 
         end else begin
             tx_start     <= 1'b0;
@@ -158,6 +134,7 @@ module master #(
                 WAIT: begin
                     // Hold off req_o until REQ_DELAY cycles have elapsed
                     // since reset released.
+                    tx_start     <= 1'b0;
                     if (delay_cnt >= REQ_DELAY) begin
                         state <= IDLE;
                         delay_cnt <= 0;
@@ -201,36 +178,15 @@ module master #(
                             timeout_cnt <= timeout_cnt + 1;
                         end
                     end else begin
-                        // Read: wait for the deserializer's capture pulse.
+                        // Read: hold here indefinitely until the
+                        // deserializer's capture pulse arrives - no
+                        // timeout, this master waits as long as it takes.
                         if (rvalid_par_pulse) begin
                             rdata_mem[tx_ptr] <= rdata_par;
                             tx_ptr      <= tx_ptr + 1;
                             req_o       <= 1'b0;
-                            timeout_cnt <= 0;
                             state       <= WAIT;
-                        end else if (timeout_cnt >= ACTIVE_TIMEOUT) begin
-                            // Gave up waiting for a response: drop off the
-                            // bus and retry the same transaction after a
-                            // backoff delay instead of holding the arbiter
-                            // hostage forever.
-                            req_o       <= 1'b0;
-                            timeout_cnt <= 0;
-                            delay_cnt   <= 0;
-                            state       <= BACKOFF;
-                        end else begin
-                            timeout_cnt <= timeout_cnt + 1;
                         end
-                    end
-                end
-
-                BACKOFF: begin
-                    // Hold off re-requesting for BACKOFF_DELAY cycles, then
-                    // retry the same (still-pending) transaction.
-                    if (delay_cnt >= BACKOFF_DELAY) begin
-                        delay_cnt <= 0;
-                        state     <= WAIT;
-                    end else begin
-                        delay_cnt <= delay_cnt + 1;
                     end
                 end
 

@@ -1,5 +1,5 @@
 module serial_system_bus #(
-    parameter ADDR_W     = 15,  // {internal_flag(1), slave_sel(2), slave_addr(12)}
+    parameter ADDR_W     = 15,  // {external_flag(1), slave_sel(2), slave_addr(12)}
     parameter DATA_W     = 8,
     parameter RW         = 1,
     parameter NUM_SLAVES = 3
@@ -57,10 +57,48 @@ module serial_system_bus #(
 
     wire addr_sel, data_sel, ctr_sel;
     wire parked_id;
-    // Bus is fixed-latency: a transfer is considered done as soon as it's
-    // put on the bus. A slave that can't keep up asserts split instead of
-    // holding a per-transfer ready low.
-    wire xfer_done = valid_bus;
+
+    // xfer_done must mark the END of the frame currently on addr_data_bus,
+    // not its start - valid_bus only pulses once, the cycle the (delayed)
+    // frame first appears on addr_data_bus, and the frame then keeps
+    // shifting out for FRAME_W-1 more cycles. If the arbiter used valid_bus
+    // directly as xfer_done, a resume arriving during that window could
+    // switch ctr_sel/grant back to the parked master mid-frame, splicing
+    // the parked master's bits onto addr_data_bus in the middle of the
+    // borrowing master's still-in-flight frame (both at the request mux and
+    // inside addr_redirect's delay pipeline, which would still be draining
+    // the interrupted frame). So count out the full frame length before
+    // declaring it done.
+    localparam FRAME_W = ADDR_W + RW + DATA_W;
+    localparam XFER_CNT_W = $clog2(FRAME_W);
+
+    reg [XFER_CNT_W-1:0] xfer_cnt;
+    reg                  xfer_active;
+    reg                  xfer_done_r;
+
+    always @(posedge clk or negedge rst) begin
+        if (!rst) begin
+            xfer_cnt    <= {XFER_CNT_W{1'b0}};
+            xfer_active <= 1'b0;
+            xfer_done_r <= 1'b0;
+        end else begin
+            xfer_done_r <= 1'b0;
+
+            if (valid_bus && !xfer_active) begin
+                xfer_active <= 1'b1;
+                xfer_cnt    <= {XFER_CNT_W{1'b0}};
+            end else if (xfer_active) begin
+                if (xfer_cnt < FRAME_W-2) begin
+                    xfer_cnt <= xfer_cnt + 1'b1;
+                end else begin
+                    xfer_active <= 1'b0;
+                    xfer_done_r <= 1'b1; // last bit of the frame just cleared addr_data_bus
+                end
+            end
+        end
+    end
+
+    wire xfer_done = xfer_done_r;
 
     // No external bus: the arbiter's own grant_M0/grant_M1 drive the
     // top-level grants directly (no control_mux needed - that module only
@@ -106,8 +144,8 @@ module serial_system_bus #(
     // addr_redirect: decides the slave from the request frame's early tap
     // bits, then forwards the whole raw frame (addr_data_bus/valid_bus) to
     // the slave side unchanged, just delayed until slave_sel* is stable.
-    // An address whose internal-flag bit says "external" is routed to
-    // slave 3 by addr_decoder - there's no off-bus port anymore.
+    // An address whose external-flag bit is set is routed to slave 3 by
+    // addr_decoder - there's no off-bus port anymore.
     // ---------------------------------------------------------
     addr_redirect #(
         .NUM_SLAVES (NUM_SLAVES)
