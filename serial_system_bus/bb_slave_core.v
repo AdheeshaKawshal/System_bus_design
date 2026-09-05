@@ -57,7 +57,7 @@
 // ============================================================================
 module bb_slave_core #(
     parameter CLK_FREQ_HZ = 125000000,     // passed through to the UART primitives
-    parameter BAUD_RATE   = 100000,
+    parameter BAUD_RATE   = 2,
     // Cycles to wait for the remote reply byte before giving up. At 125 MHz /
     // 100 kbaud one bit is 1250 cycles and one 8N1 byte is 12500, so the reply
     // alone cannot arrive in under 12500 cycles. 50000 leaves roughly three
@@ -152,7 +152,7 @@ module bb_slave_core #(
     reg [31:0] rx_timeout_cnt;
 
     // addr[14] is forced to 0 in the outgoing header -- see file header.
-    wire [23:0] pkt = { {we_c, 1'b0, addr_c[13:8]},   // byte 0: header
+    (* MARK_DEBUG = "TRUE" *) wire [23:0] pkt = { {we_c, 1'b0, addr_c[13:8]},   // byte 0: header
                         addr_c[7:0],                  // byte 1
                         wdata_c };                    // byte 2
 
@@ -174,8 +174,8 @@ module bb_slave_core #(
         .done_o (tx_done)
     );
 
-    wire [7:0] rx_data;
-    wire       rx_valid;
+    (* MARK_DEBUG = "TRUE" *) wire [7:0] rx_data;
+    (* MARK_DEBUG = "TRUE" *) wire       rx_valid;
 
     uart_frame_rx #(
         .CLK_FREQ_HZ (CLK_FREQ_HZ),

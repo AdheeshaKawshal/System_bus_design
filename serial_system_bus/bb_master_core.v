@@ -11,7 +11,7 @@
 // ============================================================================
 module bb_master_core #(
     parameter CLK_FREQ_HZ    = 125000000,
-    parameter BAUD_RATE      = 100000,
+    parameter BAUD_RATE      = 2,
     parameter ADDR_W         = 15,
     parameter DATA_W         = 8,
     parameter RW             = 1,
@@ -67,9 +67,9 @@ module bb_master_core #(
     // rx_frame[23:16] = header {rw, 1'b0, addr[13:8]}
     // rx_frame[15:8]  = addr[7:0]
     // rx_frame[7:0]   = wdata
-    wire        pkt_we    = rx_frame[23];
-    wire [13:0] pkt_addr  = {rx_frame[21:16], rx_frame[15:8]};
-    wire [7:0]  pkt_wdata = rx_frame[7:0];
+    (* MARK_DEBUG = "TRUE" *) wire        pkt_we    = rx_frame[23];
+    (* MARK_DEBUG = "TRUE" *) wire [13:0] pkt_addr  = {rx_frame[21:16], rx_frame[15:8]};
+    (* MARK_DEBUG = "TRUE" *) wire [7:0]  pkt_wdata = rx_frame[7:0];
 
     // ------------------------------------------------------------------
     // Block 2: 1-deep hold register + sticky overflow flag

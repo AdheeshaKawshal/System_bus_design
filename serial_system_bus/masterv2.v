@@ -43,12 +43,12 @@ module bb_master_txn_core #(
     // Bus interface (driven only while granted).
     // addr_o carries {address, we} packed together (we in the LSB), ready
     // to connect straight to the bus's addr_Mx port with no wrapping needed.
-    (* MARK_DEBUG = "TRUE" *) output reg [ADDR_W+RW-1:0] addr_o,
-    (* MARK_DEBUG = "TRUE" *) output reg [DATA_W-1:0]    wdata_o,
-    (* MARK_DEBUG = "TRUE" *) output reg                 valid_o,
+    output reg [ADDR_W+RW-1:0] addr_o,
+    output reg [DATA_W-1:0]    wdata_o,
+    output reg                 valid_o,
 
-    (* MARK_DEBUG = "TRUE" *) input wire [DATA_W-1:0] rdata_i,
-    (* MARK_DEBUG = "TRUE" *) input wire              rvalid_i,  // pulses alongside rdata_i on a read
+    input wire [DATA_W-1:0] rdata_i,
+    input wire              rvalid_i,  // pulses alongside rdata_i on a read
 
     // External transaction-injection port -- the only source of transactions.
     input  wire              txn_valid_i,

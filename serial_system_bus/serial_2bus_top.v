@@ -32,16 +32,16 @@ module serial_2bus_top #(
     // ACTIVE_TIMEOUT/BACKOFF_DELAY - master.v's read path now just waits
     // indefinitely for rvalid, no retry timeout.
     parameter M0_START_TXN_BUS0      = 0,
-    parameter M0_REQ_DELAY_BUS0      = 100000,
+    parameter M0_REQ_DELAY_BUS0      = 100,
     parameter M0_WRITE_DELAY_BUS0    = 26,
 
     // Bus 1's Master 0 timing - independent of Bus 0's.
     parameter M0_START_TXN_BUS1      = 1,
-    parameter M0_REQ_DELAY_BUS1      = 300000,
+    parameter M0_REQ_DELAY_BUS1      = 300,
     parameter M0_WRITE_DELAY_BUS1    = 26
 )(
     input wire clk,
-    input wire rst,
+    input wire rst,     // active-high external reset - inverted below for the active-low internal modules
 
     // ---- Bus 0's UART pins - real GPIOs, connect from outside ----------
     output wire bus0_mc_uart_tx_o,
@@ -53,8 +53,22 @@ module serial_2bus_top #(
     output wire bus1_mc_uart_tx_o,
     input  wire bus1_mc_uart_rx_i,
     output wire bus1_sc_uart_tx_o,
-    input  wire bus1_sc_uart_rx_i
+    input  wire bus1_sc_uart_rx_i,
+
+    // ---- link-activity LEDs: bus0's slave-tx/master-rx pair, and the
+    // mirrored master-tx/slave-rx pair on bus1 -----------------------------
+    output wire bus0_sc_tx_led_o,
+    output wire bus0_mc_rx_led_o,
+    output wire bus1_mc_tx_led_o,
+    output wire bus1_sc_rx_led_o
 );
+
+    wire rst_n = ~rst;
+
+    assign bus0_sc_tx_led_o = bus0_sc_uart_tx_o;
+    assign bus0_mc_rx_led_o = bus0_mc_uart_rx_i;
+    assign bus1_mc_tx_led_o = bus1_mc_uart_tx_o;
+    assign bus1_sc_rx_led_o = bus1_sc_uart_rx_i;
 
     serial_bus_top #(
         .ADDR_W              (ADDR_W),
@@ -66,7 +80,7 @@ module serial_2bus_top #(
         .M0_WRITE_DELAY      (M0_WRITE_DELAY_BUS0)
     ) u_bus0 (
         .clk         (clk),
-        .rst         (rst),
+        .rst         (rst_n),
 
         .mc_uart_tx_o (bus0_mc_uart_tx_o),
         .mc_uart_rx_i (bus0_mc_uart_rx_i),
@@ -84,7 +98,7 @@ module serial_2bus_top #(
         .M0_WRITE_DELAY      (M0_WRITE_DELAY_BUS1)
     ) u_bus1 (
         .clk         (clk),
-        .rst         (rst),
+        .rst         (rst_n),
 
         .mc_uart_tx_o (bus1_mc_uart_tx_o),
         .mc_uart_rx_i (bus1_mc_uart_rx_i),

@@ -36,10 +36,10 @@ module bb_local_regfile #(
     input wire                  cs_i,     // chip select from addr_decoder
     input wire                  valid_i,  // master has a valid transaction
     input wire                  we_i,     // 1 = write, 0 = read
-    (* MARK_DEBUG = "TRUE" *) input wire [ADDR_W-1:0] addr_i,
-    (* MARK_DEBUG = "TRUE" *) input wire [DATA_W-1:0] wdata_i,
+    input wire [ADDR_W-1:0] addr_i,
+    input wire [DATA_W-1:0] wdata_i,
 
-    (* MARK_DEBUG = "TRUE" *) output reg [DATA_W-1:0] rdata_o,  // data back to master on a read
+    output reg [DATA_W-1:0] rdata_o,  // data back to master on a read
     output reg                  rvalid_o  // pulses when rdata_o holds valid read data
 );
 
