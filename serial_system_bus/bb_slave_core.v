@@ -57,7 +57,7 @@
 // ============================================================================
 module bb_slave_core #(
     parameter CLK_FREQ_HZ = 125000000,     // passed through to the UART primitives
-    parameter BAUD_RATE   = 2,
+    parameter BAUD_RATE   = 2000000,
     // Cycles to wait for the remote reply byte before giving up. At 125 MHz /
     // 100 kbaud one bit is 1250 cycles and one 8N1 byte is 12500, so the reply
     // alone cannot arrive in under 12500 cycles. 50000 leaves roughly three
@@ -256,7 +256,7 @@ module bb_slave_core #(
     // response path, turning it into the serial rdata_o_ser/rvalid_o pair.
     // ------------------------------------------------------------------
     wire       ser_trigger = local_rvalid | r_rvalid;
-    wire [7:0] ser_data    = r_rvalid ? r_rdata : local_rdata;
+    (* MARK_DEBUG = "TRUE" *) wire [7:0] ser_data    = r_rvalid ? r_rdata : local_rdata;
 
     Serializer u_serializer (
         .clk_in         (clk),

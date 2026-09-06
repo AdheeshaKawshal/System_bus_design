@@ -187,6 +187,14 @@ module master #(
                             req_o       <= 1'b0;
                             state       <= WAIT;
                         end
+                        if (timeout_cnt >= WRITE_DELAY) begin
+                            tx_ptr      <= tx_ptr + 1;
+                            req_o       <= 1'b0;
+                            timeout_cnt <= 0;
+                            state       <= WAIT;
+                        end else begin
+                            timeout_cnt <= timeout_cnt + 1;
+                        end
                     end
                 end
 

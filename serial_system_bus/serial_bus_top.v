@@ -14,8 +14,8 @@ module serial_bus_top #(
     // Master 0 independently of the other bus's. No ACTIVE_TIMEOUT/
     // BACKOFF_DELAY here - master.v's read path now just waits
     // indefinitely for rvalid, no retry timeout.
-    parameter M0_START_TXN      = 0,
-    parameter M0_REQ_DELAY      = 0,
+    parameter M0_START_TXN      = 1,
+    parameter M0_REQ_DELAY      = 1000,
     parameter M0_WRITE_DELAY    = 26
 )(
     input wire clk,
@@ -30,7 +30,7 @@ module serial_bus_top #(
     output wire sc_uart_tx_o,  // this board's bb_slave_core TX -> the other board's bb_master_core RX
     input  wire sc_uart_rx_i   // this board's bb_slave_core RX <- the other board's bb_master_core TX
 );
-
+    wire rst_n = ~rst;
     // ---------------------------------------------------------
     // Master 0: plain, directly connected.
     // ---------------------------------------------------------
@@ -46,7 +46,7 @@ module serial_bus_top #(
         .WRITE_DELAY    (M0_WRITE_DELAY)
     ) u_master0 (
         .clk           (clk),
-        .rst           (rst),
+        .rst           (rst_n),
         .req_o         (req_M0),
         .grant_i       (grant_M0),
         .addr_data_o   (addr_data_M0),
@@ -74,7 +74,7 @@ module serial_bus_top #(
         .RW     (RW)
     ) u_bb_master_core (
         .clk           (clk),
-        .rst           (rst),
+        .rst           (rst_n),
 
         .uart_rx_i     (mc_uart_rx_i),
         .uart_tx_o     (mc_uart_tx_o),
@@ -108,7 +108,7 @@ module serial_bus_top #(
         .NUM_SLAVES (NUM_SLAVES)
     ) u_serial_system_bus (
         .clk (clk),
-        .rst (rst),
+        .rst (rst_n),
 
         .req_M0         (req_M0),
         .grant_M0       (grant_M0),
@@ -157,7 +157,7 @@ module serial_bus_top #(
         .RW     (RW)
     ) u_slave0 (
         .clk         (clk),
-        .rst         (rst),
+        .rst         (rst_n),
         .cs_i        (slave_sel1),
         .addr_data_i (addr_data_bus),
         .valid_i     (valid_bus),
@@ -177,7 +177,7 @@ module serial_bus_top #(
         .WAIT_CYCLES (10)
     ) u_slave1 (
         .clk         (clk),
-        .rst         (rst),
+        .rst         (rst_n),
         .cs_i        (slave_sel2),
         .addr_data_i (addr_data_bus),
         .valid_i     (valid_bus),
@@ -199,7 +199,7 @@ module serial_bus_top #(
     // ---------------------------------------------------------
     bb_slave_core u_bb_slave_core (
         .clk         (clk),
-        .rst         (rst),
+        .rst         (rst_n),
 
         .cs_i        (slave_sel3),
         .addr_data_i (addr_data_bus),

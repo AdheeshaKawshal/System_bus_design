@@ -11,7 +11,7 @@
 // ============================================================================
 module bb_master_core #(
     parameter CLK_FREQ_HZ    = 125000000,
-    parameter BAUD_RATE      = 2,
+    parameter BAUD_RATE      = 2000000,
     parameter ADDR_W         = 15,
     parameter DATA_W         = 8,
     parameter RW             = 1,
@@ -139,7 +139,7 @@ module bb_master_core #(
     wire [DATA_W-1:0]    wdata_par;
     wire                 valid_par;
 
-    wire [DATA_W-1:0]    rdata_par;
+    (* MARK_DEBUG = "TRUE" *) wire [DATA_W-1:0]    rdata_par;
     wire                 rvalid_par;
 
     bb_master_txn_core #(
