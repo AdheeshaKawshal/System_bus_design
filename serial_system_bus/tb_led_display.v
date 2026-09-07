@@ -37,7 +37,7 @@ module tb_led_display;
         .mc_uart_rx_i (1'b1),   // UART idle - unused, single-bus test only
         .sc_uart_tx_o (sc_uart_tx_o),
         .sc_uart_rx_i (1'b1),   // UART idle - unused, single-bus test only
-        .m0_pkt_sel_i (4'b0100),
+        .m0_pkt_sel_i (pkt_sel),
         .led_o        (led_o)
     );
 
@@ -47,9 +47,10 @@ module tb_led_display;
         repeat (5) @(posedge clk);
         rst = 0;   // release reset
 
-        for (i = 2; i <= NUM_TXN; i = i + 1) begin                   // park first, so this is a genuine new selection
+        for (i = 2; i <= NUM_TXN; i = i + 1) begin
+            pkt_sel = 4'd0;                    // park first, so this is a genuine new selection
             repeat (PARK_CYCLES) @(posedge clk);
-            pkt_sel = i[3:0];
+            pkt_sel = 4'd4;
             repeat (PERIOD_CYCLES - PARK_CYCLES) @(posedge clk);
 
             if (dut.u_master0.we_mem[i])
