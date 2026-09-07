@@ -18,15 +18,6 @@ module arbiter (
 
     output reg parked_id
 );
-    // ---------------------------------------------------------
-    // FSM states
-    // ---------------------------------------------------------
-    // IDLE        : bus idle, nobody granted.
-    // BUSY        : cur_owner owns the bus normally (no park in effect).
-    // PARKED_IDLE : parked_id is split-parked; bus currently idle, waiting
-    //               either for resume or for the other master to request.
-    // PARKED_BUSY : parked_id is split-parked; the OTHER master (cur_owner)
-    //               has been lent the bus in the meantime.
     localparam IDLE        = 2'd0,
                BUSY         = 2'd1,
                PARKED_IDLE  = 2'd2,

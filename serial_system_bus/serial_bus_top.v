@@ -28,7 +28,15 @@ module serial_bus_top #(
     output wire mc_uart_tx_o,  // this board's bb_master_core TX -> the other board's bb_slave_core RX
     input  wire mc_uart_rx_i,  // this board's bb_master_core RX <- the other board's bb_slave_core TX
     output wire sc_uart_tx_o,  // this board's bb_slave_core TX -> the other board's bb_master_core RX
-    input  wire sc_uart_rx_i   // this board's bb_slave_core RX <- the other board's bb_master_core TX
+    input  wire sc_uart_rx_i,  // this board's bb_slave_core RX <- the other board's bb_master_core TX
+
+    // External selection of which entry in Master 0's transaction table
+    // to send next (see master.v's pkt_sel_i).
+    input wire [3:0] m0_pkt_sel_i,
+
+    // led_display's latched write/read + address[2:0] for the last frame
+    // seen on the shared slave-side bus (see led_display.v).
+    output wire [3:0] led_o
 );
     wire rst_n = ~rst;
     // ---------------------------------------------------------
@@ -47,6 +55,7 @@ module serial_bus_top #(
     ) u_master0 (
         .clk           (clk),
         .rst           (rst_n),
+        .pkt_sel_i     (m0_pkt_sel_i),
         .req_o         (req_M0),
         .grant_i       (grant_M0),
         .addr_data_o   (addr_data_M0),
@@ -146,6 +155,28 @@ module serial_bus_top #(
         .rvalid_S2    (rvalid_S2),
         .split        (split),
         .resume       (resume)
+    );
+
+    // ---------------------------------------------------------
+    // LED display: watches the shared slave-side bus directly, so it
+    // catches every frame a slave receives, S2's cross-board bridge
+    // included.
+    // ---------------------------------------------------------
+    // rdata_M0_ser/rvalid_M0 and rdata_M1_ser/rvalid_M1 both mirror the
+    // same underlying slave response (see serial_system_bus.v), so OR-ing
+    // the two valids picks it up regardless of which master is granted.
+    led_display #(
+        .ADDR_W (ADDR_W),
+        .RW     (RW),
+        .DATA_W (DATA_W)
+    ) u_led_display (
+        .clk          (clk),
+        .rst          (rst_n),
+        .addr_data_bus (addr_data_bus),
+        .valid_bus     (valid_bus),
+        .rdata_bus_ser (rdata_M0_ser),
+        .rvalid_bus    (rvalid_M0 | rvalid_M1),
+        .led_o         (led_o)
     );
 
     // ---------------------------------------------------------

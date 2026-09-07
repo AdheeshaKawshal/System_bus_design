@@ -1,8 +1,8 @@
 module addr_redirect #(
     parameter NUM_SLAVES = 3,
-    parameter SEL_W      = 2,
-    parameter TAP_BITS   = SEL_W + 1,  // external-flag + slave-select bits (3)
-    parameter OUT_DELAY  = 4           // cycles the whole frame is held back, >= TAP_BITS+1 so slave_sel* is stable first
+    parameter SEL_W      = 3,
+    parameter TAP_BITS   = SEL_W + 1,  // external-flag + slave-select bits (4)
+    parameter OUT_DELAY  = 6           // cycles the whole frame is held back, >= TAP_BITS+2 (one extra cycle for the added decode-result FF stage below) so slave_sel* is stable first
 )(
     input  wire clk,
     input  wire rst_n,
@@ -10,8 +10,9 @@ module addr_redirect #(
     input  wire serial_in,        // serial frame line, MSB first
     input  wire frame_valid_in,   // strobe: a new frame starts now
 
-    // latched right after the first TAP_BITS bits arrive - held until the
-    // next frame starts
+    // decoded one cycle after the first TAP_BITS bits arrive (an extra FF
+    // stage beyond the decode itself, to ease timing), held until the next
+    // frame starts
     output reg  slave_sel1,
     output reg  slave_sel2,
     output reg  slave_sel3,
@@ -91,8 +92,36 @@ module addr_redirect #(
         .addr_invalid (dec_addr_invalid)
     );
 
-    // Latch the decode result and hold it for the whole transaction,
-    // clearing only when the next frame starts.
+    // Stage 1: latch the decode result and hold it for the whole
+    // transaction, clearing only when the next frame starts.
+    reg slave_sel1_r, slave_sel2_r, slave_sel3_r, ext_redirect_r, addr_invalid_r;
+
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            slave_sel1_r   <= 1'b0;
+            slave_sel2_r   <= 1'b0;
+            slave_sel3_r   <= 1'b0;
+            ext_redirect_r <= 1'b0;
+            addr_invalid_r <= 1'b0;
+        end else if (early_valid) begin
+            slave_sel1_r   <= dec_sel1;
+            slave_sel2_r   <= dec_sel2;
+            slave_sel3_r   <= dec_sel3;
+            ext_redirect_r <= dec_ext_redirect;
+            addr_invalid_r <= dec_addr_invalid;
+        end else if (frame_valid_in_rise) begin
+            slave_sel1_r   <= 1'b0;
+            slave_sel2_r   <= 1'b0;
+            slave_sel3_r   <= 1'b0;
+            ext_redirect_r <= 1'b0;
+            addr_invalid_r <= 1'b0;
+        end
+    end
+
+    // Stage 2: one extra FF of latency on the decode result (eases timing
+    // on the decoder's combinational path) - OUT_DELAY above accounts for
+    // this extra cycle so the forwarded frame still only reaches the slave
+    // once slave_sel* here has settled.
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             slave_sel1   <= 1'b0;
@@ -100,18 +129,12 @@ module addr_redirect #(
             slave_sel3   <= 1'b0;
             ext_redirect <= 1'b0;
             addr_invalid <= 1'b0;
-        end else if (early_valid) begin
-            slave_sel1   <= dec_sel1;
-            slave_sel2   <= dec_sel2;
-            slave_sel3   <= dec_sel3;
-            ext_redirect <= dec_ext_redirect;
-            addr_invalid <= dec_addr_invalid;
-        end else if (frame_valid_in_rise) begin
-            slave_sel1   <= 1'b0;
-            slave_sel2   <= 1'b0;
-            slave_sel3   <= 1'b0;
-            ext_redirect <= 1'b0;
-            addr_invalid <= 1'b0;
+        end else begin
+            slave_sel1   <= slave_sel1_r;
+            slave_sel2   <= slave_sel2_r;
+            slave_sel3   <= slave_sel3_r;
+            ext_redirect <= ext_redirect_r;
+            addr_invalid <= addr_invalid_r;
         end
     end
 

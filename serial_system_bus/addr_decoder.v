@@ -1,27 +1,36 @@
-// addr_decoder: picks a slave from just the 3-bit early tap of a request
-// frame (external-flag + 2 slave-select bits) - everything addr_redirect
-// needs to route a frame, since the rest of the frame is now delayed and
-// forwarded to the slave verbatim rather than being re-decoded here.
+// addr_decoder: picks a slave from just the 4-bit early tap of a request
+// frame (external-flag + a 3-bit slave-select field) - everything
+// addr_redirect needs to route a frame, since the rest of the frame is now
+// delayed and forwarded to the slave verbatim rather than being re-decoded
+// here.
+//
+// The 3-bit select field is matched with don't-cares on its LSB for
+// slave1/slave2 (3'b00x / 3'b01x - the extra bit is unused/free), and an
+// exact match for slave3 (3'b100):
+//   3'b00x -> slave1
+//   3'b01x -> slave2
+//   3'b100 -> slave3
+//   anything else (3'b101/110/111) -> addr_invalid
 //
 // There's no external/off-bus port anymore: an address whose external-flag
 // bit is set is routed to slave 3 (S2), which acts as the bridge/gateway
-// slave - same slave_sel3 a genuine sel==10 internal access would get.
+// slave - same slave_sel3 a genuine 3'b100 internal access would get.
 // ext_redirect is the extra bit that tells slave 3 apart the two cases:
 // high only for the external-flag case, so the bridge slave knows to
 // forward this particular transaction on rather than service it itself.
 module addr_decoder #(
     parameter NUM_SLAVES = 3,
-    parameter SEL_W      = 2,
+    parameter SEL_W      = 3,
     parameter TAP_BITS   = SEL_W + 1   // external-flag + slave-select bits
 )(
-    input  wire [TAP_BITS-1:0] sel_bits,  // {external_flag, slave_sel[1:0]}, MSB first
+    input  wire [TAP_BITS-1:0] sel_bits,  // {external_flag, slave_sel[2:0]}, MSB first
     input  wire                valid_i,
 
-    output reg  slave_sel1,    // 1 = sel == 00 (internal)
-    output reg  slave_sel2,    // 1 = sel == 01 (internal)
-    output reg  slave_sel3,    // 1 = sel == 10 (internal), or external_flag == 1 (external, routed here)
+    output reg  slave_sel1,    // 1 = sel == 3'b00x (internal)
+    output reg  slave_sel2,    // 1 = sel == 3'b01x (internal)
+    output reg  slave_sel3,    // 1 = sel == 3'b100 (internal), or external_flag == 1 (external, routed here)
     output reg  ext_redirect,  // 1 alongside slave_sel3 only for the external case - tells S2 to bridge, not service
-    output reg  addr_invalid   // 1 = sel == 11 (internal)
+    output reg  addr_invalid   // 1 = sel matches none of the above (internal)
 );
 
     wire             is_external = sel_bits[TAP_BITS-1];
@@ -39,12 +48,11 @@ module addr_decoder #(
                 slave_sel    = 3'b100;  // external -> slave 3 (bridge/gateway)
                 ext_redirect = 1'b1;
             end else begin
-                case (sel)
-                    2'b00:   slave_sel = 3'b001;
-                    2'b01:   slave_sel = 3'b010;
-                    2'b10:   slave_sel = 3'b100;
-                    2'b11:   addr_invalid = 1'b1;
-                    default: slave_sel = 3'b000;
+                casez (sel)
+                    3'b00?:  slave_sel = 3'b001;
+                    3'b01?:  slave_sel = 3'b010;
+                    3'b100:  slave_sel = 3'b100;
+                    default: addr_invalid = 1'b1;
                 endcase
             end
         end

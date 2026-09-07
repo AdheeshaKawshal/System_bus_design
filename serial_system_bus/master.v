@@ -10,6 +10,11 @@ module master #(
     input wire clk,
     input wire rst,
 
+    // External packet select: chooses which entry in the transaction
+    // table (tx_ptr) is sent on the next request. Sampled when leaving
+    // IDLE to start a new request.
+    input wire [3:0] pkt_sel_i,
+
     // Arbiter interface
     output reg req_o,
     input wire grant_i,
@@ -32,14 +37,17 @@ module master #(
     reg [31:0] delay_cnt;
     reg [31:0] timeout_cnt;   // cycles spent granted in ACTIVE (write hold only - a read just waits for rvalid)
 
-    // Transaction memory: type (we), addr, wdata and space to store read results
-    reg [DATA_W-1:0] wdata_mem [0:NUM_TXN-1];
-    reg [ADDR_W-1:0] addr_mem  [0:NUM_TXN-1];
-    reg              we_mem    [0:NUM_TXN-1];
-    reg [DATA_W-1:0] rdata_mem [0:NUM_TXN-1];
+    // Transaction memory: type (we), addr, wdata and space to store read
+    // results. Indexed 1..NUM_TXN (not 0-based) so index 0 stays free as
+    // pkt_sel_i's "no selection" sentinel.
+    reg [DATA_W-1:0] wdata_mem [1:NUM_TXN];
+    reg [ADDR_W-1:0] addr_mem  [1:NUM_TXN];
+    reg              we_mem    [1:NUM_TXN];
+    reg [DATA_W-1:0] rdata_mem [1:NUM_TXN];
 
-    // current transaction pointer and count
-    reg [$clog2(NUM_TXN)-1:0] tx_ptr;
+    // current transaction pointer and count - kept 4 bits wide to match
+    // pkt_sel_i, the widest index external logic can actually supply.
+    reg [3:0] tx_ptr;
     integer i;
 
     // This simple master model has no reason to ever refuse a response.
@@ -97,34 +105,34 @@ module master #(
             tx_start     <= 1'b0;
             rvalid_par_d <= 1'b0;
             tx_ptr       <= START_TXN;
-            for (i = 0; i < NUM_TXN; i = i + 1) begin
+            for (i = 1; i <= NUM_TXN; i = i + 1) begin
                 addr_mem[i]  <= {ADDR_W{1'b0}};
                 wdata_mem[i] <= {DATA_W{1'b0}};
                 we_mem[i]    <= 1'b0;
                 rdata_mem[i] <= {DATA_W{1'b0}};
             end
 
-            // 0: write slave1 addr 0x001 <- 0x11
-            // 1: read  slave1 addr 0x001
-            // 2: write slave1 addr 0x005 <- 0x22
-            // 3: read  slave1 addr 0x005
-            // 4: write slave1 addr 0x001 <- 0x33
-            // 5: read  slave2 addr 0x001
-            // 6: write slave2 addr 0x008 <- 0x44
-            // 7: read  slave2 addr 0x008
+            // 1: write slave1 addr 0x001 <- 0x11
+            // 2: read  slave1 addr 0x001
+            // 3: write slave1 addr 0x005 <- 0x22
+            // 4: read  slave1 addr 0x005
+            // 5: write slave1 addr 0x001 <- 0x33
+            // 6: read  slave2 addr 0x001
+            // 7: write slave2 addr 0x008 <- 0x44
+            // 8: read  slave2 addr 0x008
             // Address layout is {external_flag(1), slave_sel(2), slave_addr(12)}
             // (see addr_redirect.v/addr_decoder.v) - external_flag must be 0
             // for a genuine on-bus slave1/slave2 access, with slave_sel
             // picking 00=slave1, 01=slave2. slave_addr below is the plain
             // 0x001/0x005/0x008 named in the comments above.
-            addr_mem[0]  <= 15'h4001; wdata_mem[0] <= 8'h11; we_mem[0] <= 1'b1;
-            addr_mem[1]  <= 15'h4001; wdata_mem[1] <= {DATA_W{1'b0}}; we_mem[1] <= 1'b0;
-            addr_mem[2]  <= 15'h2005; wdata_mem[2] <= 8'h22; we_mem[2] <= 1'b1;
-            addr_mem[3]  <= 15'h2005; wdata_mem[3] <= {DATA_W{1'b0}}; we_mem[3] <= 1'b0;
-            addr_mem[4]  <= 15'h0001; wdata_mem[4] <= 8'h33; we_mem[4] <= 1'b1;
-            addr_mem[5]  <= 15'h1001; wdata_mem[5] <= {DATA_W{1'b0}}; we_mem[5] <= 1'b0;
-            addr_mem[6]  <= 15'h1008; wdata_mem[6] <= 8'h44; we_mem[6] <= 1'b1;
-            addr_mem[7]  <= 15'h1008; wdata_mem[7] <= {DATA_W{1'b0}}; we_mem[7] <= 1'b0;
+            addr_mem[1]  <= 15'h4001; wdata_mem[1] <= 8'h03; we_mem[1] <= 1'b1;
+            addr_mem[2]  <= 15'h4001; wdata_mem[2] <= {DATA_W{1'b0}}; we_mem[2] <= 1'b0;
+            addr_mem[3]  <= 15'h2005; wdata_mem[3] <= 8'h02; we_mem[3] <= 1'b1;
+            addr_mem[4]  <= 15'h2005; wdata_mem[4] <= {DATA_W{1'b0}}; we_mem[4] <= 1'b0;
+            addr_mem[5]  <= 15'h0001; wdata_mem[5] <= 8'h04; we_mem[5] <= 1'b1;
+            addr_mem[6]  <= 15'h0001; wdata_mem[6] <= {DATA_W{1'b0}}; we_mem[6] <= 1'b0;
+            addr_mem[7]  <= 15'h1008; wdata_mem[7] <= 8'h04; we_mem[7] <= 1'b1;
+            addr_mem[8]  <= 15'h1008; wdata_mem[8] <= {DATA_W{1'b0}}; we_mem[8] <= 1'b0;
 
         end else begin
             tx_start     <= 1'b0;
@@ -144,12 +152,19 @@ module master #(
                 end
 
                 IDLE: begin
-                    // If there are remaining transactions, request the bus
-                    if (tx_ptr < NUM_TXN) begin
-                        req_o <= 1'b1;
-                        state <= REQUEST;
+                    // pkt_sel_i == 0 (no bit set) is the reserved "no
+                    // selection" sentinel: keep this master parked here,
+                    // never asserting req_o, so the arbiter/bus stays free
+                    // for the other master to use without collision.
+                    // A nonzero selection picks table entry pkt_sel_i
+                    // directly (table is indexed 1..NUM_TXN).
+                    if (|pkt_sel_i && pkt_sel_i <= NUM_TXN) begin
+                        tx_ptr <= pkt_sel_i;
+                        req_o  <= 1'b1;
+                        state  <= REQUEST;
                     end else begin
-                        // no more transactions: stay idle and keep outputs low
+                        // no selection, or out-of-range: stay idle and
+                        // keep outputs low
                         req_o <= 1'b0;
                     end
                 end
@@ -170,7 +185,6 @@ module master #(
                         // the grant long enough for the frame to clear the
                         // request line, then release.
                         if (timeout_cnt >= WRITE_DELAY) begin
-                            tx_ptr      <= tx_ptr + 1;
                             req_o       <= 1'b0;
                             timeout_cnt <= 0;
                             state       <= WAIT;
@@ -180,20 +194,13 @@ module master #(
                     end else begin
                         // Read: hold here indefinitely until the
                         // deserializer's capture pulse arrives - no
-                        // timeout, this master waits as long as it takes.
+                        // timeout, this master waits as long as it takes
+                        // (needed for the external/bridged slave path,
+                        // whose UART round trip can far exceed WRITE_DELAY).
                         if (rvalid_par_pulse) begin
                             rdata_mem[tx_ptr] <= rdata_par;
-                            tx_ptr      <= tx_ptr + 1;
                             req_o       <= 1'b0;
                             state       <= WAIT;
-                        end
-                        if (timeout_cnt >= WRITE_DELAY) begin
-                            tx_ptr      <= tx_ptr + 1;
-                            req_o       <= 1'b0;
-                            timeout_cnt <= 0;
-                            state       <= WAIT;
-                        end else begin
-                            timeout_cnt <= timeout_cnt + 1;
                         end
                     end
                 end
