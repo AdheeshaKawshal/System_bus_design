@@ -1,53 +1,3 @@
-// ============================================================================
-// bb_slave_core.v
-// ----------------------------------------------------------------------------
-// Slave-side bridge core. Upstream port is now SERIAL, matching this
-// folder's slave.v shape exactly (cs_i, addr_data_i, valid_i in;
-// rdata_o_ser, rvalid_o out) so this core can plug straight into
-// serial_system_bus.v behind any slave_selN. An addr_data_deserializer
-// captures the incoming {addr,we,wdata} frame into parallel we_c/addr_c/
-// wdata_c (frame_done pulses once per frame, replacing the old
-// cs_i&valid_i level + rising-edge-detect scheme entirely), and a
-// Serializer at the far end turns the parallel local/remote read result
-// back into a serial response frame. There is no ready/backpressure
-// handshake anywhere in this design -- the bus takes only rdata + rvalid
-// back from a slave.
-//
-// This core is purely a bridge now - it has no local register file of its
-// own. Every request that reaches it (cs_i is expected to be driven only by
-// the caller's dedicated external-flag select, e.g. ext_redirect in
-// addr_decoder.v/serial_bus_top.v - not one of the genuinely-internal
-// slave_selN lines) is packed into a single 24-bit UART frame and shipped
-// out to a bb_master_core on the far side of the link. A WRITE is
-// fire-and-forget -- nothing comes back and nothing is reported. A READ
-// waits for the single reply byte and then pulses rvalid_o with it.
-//
-// Packet layout sent on a REMOTE access -- one 24-bit frame, one start bit,
-// one stop bit (26 bit-times total, vs 30 for the same payload framed as
-// three separate bytes):
-//   pkt[23:16] = { rw, 1'b0, addr[13:8] }
-//   pkt[15:8]  = addr[7:0]
-//   pkt[7:0]   = wdata[7:0]
-// addr[14] is forced to 0 in the outgoing packet -- the receiving board sees
-// a plain local address in its own space, so two boards chain symmetrically.
-//
-// RX_TIMEOUT guards the wait-for-reply state on reads: on expiry the FSM
-// returns to idle with no rvalid_o pulse and raises the sticky timeout_o
-// flag. Without it a dead link would leave this core wedged in
-// R_WAIT_REPLY forever, silently swallowing every later remote access.
-//
-// A remote request is started by frame_done, the addr_data_deserializer's
-// own one-cycle-per-frame capture-complete pulse - inherently a single
-// pulse per transaction, so no separate edge-detect is needed here the way
-// the old cs_i/valid_i-level scheme required.
-//
-// There is no backpressure toward the bus, so a remote request that arrives
-// while the UART transmitter is still busy with the previous packet cannot be
-// stalled -- it is silently dropped. Sequencing remote accesses far enough
-// apart is the bus master's responsibility.
-//
-// Reset: active-low, posedge clk / negedge rst (project convention).
-// ============================================================================
 module bb_slave_core #(
     parameter CLK_FREQ_HZ = 125000000,     // passed through to the UART primitives
     parameter BAUD_RATE   = 2000000,
@@ -77,13 +27,6 @@ module bb_slave_core #(
     output reg         timeout_o      // a remote read got no reply in time
 );
 
-    // ------------------------------------------------------------------
-    // Request capture: shared addr_data_deserializer does the shift-
-    // register work, gated on cs_i. frame_done is already the clean
-    // one-cycle "a new transaction just fully arrived" pulse - it replaces
-    // the old cs_i&valid_i level + rising-edge-detect scheme entirely, no
-    // sel/sel_d/sel_rise needed.
-    // ------------------------------------------------------------------
     wire        we_c;
     wire [14:0] addr_c;
     wire [7:0]  wdata_c;

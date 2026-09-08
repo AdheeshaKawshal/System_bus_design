@@ -14,6 +14,7 @@ module master #(
     // table (tx_ptr) is sent on the next request. Sampled when leaving
     // IDLE to start a new request.
     input wire [3:0] pkt_sel_i,
+    input wire  pkt_valid_i,
 
     // Arbiter interface
     output reg req_o,
@@ -158,7 +159,7 @@ module master #(
                     // for the other master to use without collision.
                     // A nonzero selection picks table entry pkt_sel_i
                     // directly (table is indexed 1..NUM_TXN).
-                    if (|pkt_sel_i && pkt_sel_i <= NUM_TXN) begin
+                    if (|pkt_sel_i && pkt_valid_i) begin
                         tx_ptr <= pkt_sel_i;
                         req_o  <= 1'b1;
                         state  <= REQUEST;

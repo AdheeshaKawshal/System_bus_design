@@ -33,10 +33,11 @@ module serial_bus_top #(
     // External selection of which entry in Master 0's transaction table
     // to send next (see master.v's pkt_sel_i).
     input wire [3:0] m0_pkt_sel_i,
-
+    input wire       pkt_valid_i,  // high when m0_pkt_sel_i is valid (see master.v's pkt_valid_i)
     // led_display's latched write/read + address[2:0] for the last frame
     // seen on the shared slave-side bus (see led_display.v).
     output wire [3:0] led_o
+
 );
     wire rst_n = ~rst;
     // ---------------------------------------------------------
@@ -62,6 +63,7 @@ module serial_bus_top #(
         .frame_valid_o (frame_valid_M0),
         .mready_o      (mready_M0),
         .rdata_ser_i   (rdata_M0_ser),
+        .pkt_valid_i   (pkt_valid_i),  // always valid, no "no selection" sentinel for this bus's Master 0
         .rvalid_i      (rvalid_M0)
     );
 
