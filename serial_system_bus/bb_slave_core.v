@@ -1,11 +1,6 @@
 module bb_slave_core #(
     parameter CLK_FREQ_HZ = 125000000,     // passed through to the UART primitives
     parameter BAUD_RATE   = 2000000,
-    // Cycles to wait for the remote reply byte before giving up. At 125 MHz /
-    // 100 kbaud one bit is 1250 cycles and one 8N1 byte is 12500, so the reply
-    // alone cannot arrive in under 12500 cycles. 50000 leaves roughly three
-    // byte-times of headroom for the far side's bus access and turnaround.
-    // Rescale this whenever CLK_FREQ_HZ/BAUD_RATE change.
     parameter RX_TIMEOUT  = 50000
 )(
     input  wire        clk,
@@ -48,12 +43,6 @@ module bb_slave_core #(
         .frame_done  (frame_done)
     );
 
-    // ------------------------------------------------------------------
-    // REMOTE path: request/reply FSM around uart_frame_tx (WIDTH=24) and
-    // uart_frame_rx (WIDTH=8, the reply byte on reads). Every frame that
-    // reaches this core goes out over the link - there is no local
-    // register file to service anything itself.
-    // ------------------------------------------------------------------
     localparam R_IDLE       = 2'd0,
                R_SEND       = 2'd1,   // uart_frame_tx shifting the 24-bit packet out
                R_WAIT_REPLY = 2'd2;   // reads only: wait for uart_frame_rx or RX_TIMEOUT
@@ -99,8 +88,7 @@ module bb_slave_core #(
         .rst         (rst),
         .rx_i        (uart_rx_i),
         .data_o      (rx_data),
-        .valid_o     (rx_valid),
-        .frame_err_o ()
+        .valid_o     (rx_valid)
     );
 
     always @(posedge clk or negedge rst) begin
@@ -148,12 +136,13 @@ module bb_slave_core #(
                         r_rdata  <= rx_data;
                         r_rvalid <= 1'b1;
                         rstate   <= R_IDLE;
-                    end else if (rx_timeout_cnt >= RX_TIMEOUT) begin
-                        timeout_o <= 1'b1;        // sticky, only cleared by rst
-                        rstate    <= R_IDLE;
-                    end else begin
-                        rx_timeout_cnt <= rx_timeout_cnt + 1'b1;
                     end
+                    // end else if (rx_timeout_cnt >= RX_TIMEOUT) begin
+                    //     timeout_o <= 1'b1;        // sticky, only cleared by rst
+                    //     rstate    <= R_IDLE;
+                    // end else begin
+                    //     rx_timeout_cnt <= rx_timeout_cnt + 1'b1;
+                    // end
                 end
 
                 default: rstate <= R_IDLE;

@@ -1,19 +1,8 @@
-
-// masterv2.v/slavev2.v's inner modules (used by bb_master_core.v/
-// bb_slave_core.v) are named bb_master_txn_core/bb_local_regfile - renamed
-// from their original master/slave to avoid colliding with this file's own
-// master.v/slave.v (used below for u_master0/u_slave0/u_slave1).
 module serial_bus_top #(
     parameter ADDR_W     = 15,
     parameter DATA_W     = 8,
     parameter RW         = 1,
     parameter NUM_SLAVES = 3,
-
-    // Master 0's own timing (plus its starting transaction index), exposed
-    // so each bus instance (e.g. in serial_2bus_top.v) can configure its
-    // Master 0 independently of the other bus's. No ACTIVE_TIMEOUT/
-    // BACKOFF_DELAY here - master.v's read path now just waits
-    // indefinitely for rvalid, no retry timeout.
     parameter M0_START_TXN      = 1,
     parameter M0_REQ_DELAY      = 1000,
     parameter M0_WRITE_DELAY    = 26
@@ -21,17 +10,11 @@ module serial_bus_top #(
     input wire clk,
     input wire rst,
 
-    // ---- UART links out to another board's serial_bus_top, for chaining
-    // two buses together back and forth (see serial_2bus_top.v) - this
-    // board's bb_master_core and bb_slave_core each get their own external
-    // TX/RX pair instead of self-looping to each other internally.
     output wire mc_uart_tx_o,  // this board's bb_master_core TX -> the other board's bb_slave_core RX
     input  wire mc_uart_rx_i,  // this board's bb_master_core RX <- the other board's bb_slave_core TX
     output wire sc_uart_tx_o,  // this board's bb_slave_core TX -> the other board's bb_master_core RX
     input  wire sc_uart_rx_i,  // this board's bb_slave_core RX <- the other board's bb_master_core TX
 
-    // External selection of which entry in Master 0's transaction table
-    // to send next (see master.v's pkt_sel_i).
     input wire [3:0] m0_pkt_sel_i,
     input wire       pkt_valid_i,  // high when m0_pkt_sel_i is valid (see master.v's pkt_valid_i)
     // led_display's latched write/read + address[2:0] for the last frame
@@ -57,25 +40,16 @@ module serial_bus_top #(
         .clk           (clk),
         .rst           (rst_n),
         .pkt_sel_i     (m0_pkt_sel_i),
+        .pkt_valid_i   (pkt_valid_i),  // always valid, no "no selection" sentinel for this bus's Master 0
         .req_o         (req_M0),
         .grant_i       (grant_M0),
         .addr_data_o   (addr_data_M0),
         .frame_valid_o (frame_valid_M0),
         .mready_o      (mready_M0),
         .rdata_ser_i   (rdata_M0_ser),
-        .pkt_valid_i   (pkt_valid_i),  // always valid, no "no selection" sentinel for this bus's Master 0
         .rvalid_i      (rvalid_M0)
     );
 
-    // ---------------------------------------------------------
-    // Master 1's slot is bb_master_core.v - not a local master with its
-    // own transaction table. It plugs into serial_system_bus's M1 port
-    // with the same shape master.v uses; its UART side now goes out to
-    // mc_uart_tx_o/mc_uart_rx_i instead of looping back to this board's own
-    // bb_slave_core, so a request it issues onto M1 originates from
-    // whatever the OTHER connected board's bb_slave_core relayed in over
-    // that link (see serial_2bus_top.v for the actual cross-connection).
-    // ---------------------------------------------------------
     wire req_M1, grant_M1, frame_valid_M1, mready_M1, rvalid_M1;
     wire addr_data_M1, rdata_M1_ser;
 
@@ -96,10 +70,7 @@ module serial_bus_top #(
         .frame_valid_o (frame_valid_M1),
         .mready_o      (mready_M1),
         .rdata_ser_i   (rdata_M1_ser),
-        .rvalid_i      (rvalid_M1),
-
-        .overflow_o    (),
-        .frame_err_o   ()
+        .rvalid_i      (rvalid_M1)
     );
 
     // ---------------------------------------------------------
@@ -168,9 +139,7 @@ module serial_bus_top #(
     // catches every frame a slave receives, S2's cross-board bridge
     // included.
     // ---------------------------------------------------------
-    // rdata_M0_ser/rvalid_M0 and rdata_M1_ser/rvalid_M1 both mirror the
-    // same underlying slave response (see serial_system_bus.v), so OR-ing
-    // the two valids picks it up regardless of which master is granted.
+
     led_display #(
         .ADDR_W (ADDR_W),
         .RW     (RW),
@@ -204,8 +173,6 @@ module serial_bus_top #(
 
     // ---------------------------------------------------------
     // Slave 1 (slave_sel2): split-capable. mready_i comes from mready_bus
-    // (the granted master's readiness, forwarded by the bus) so RESUME
-    // knows when it's safe to send the parked master its response.
     // ---------------------------------------------------------
     slave_split #(
         .ADDR_W      (12),
@@ -225,12 +192,6 @@ module serial_bus_top #(
         .resume_o    (resume)
     );
 
-    // ---------------------------------------------------------
-    // Slave 2 (slave_sel3): plain, genuinely internal - the 3-bit select
-    // field is only ever consulted when the external-flag bit (addr[14])
-    // is 0 (see addr_decoder.v), so this never collides with the
-    // external/bridge path below.
-    // ---------------------------------------------------------
     slave #(
         .ADDR_W (12),
         .DATA_W (DATA_W),
@@ -245,16 +206,6 @@ module serial_bus_top #(
         .rvalid_o    (rvalid_S2)
     );
 
-    // ---------------------------------------------------------
-    // External/bridge slave: its own dedicated select, ext_redirect - set
-    // only when addr[14] (the external-flag bit) is 1, in which case the
-    // 3-bit slave_sel field is never even inspected (see addr_decoder.v).
-    // So this is fully independent of slave_sel1/2/3 above, not layered on
-    // top of any of them. bb_slave_core derives its own LOCAL/REMOTE split
-    // from bit 14 of the forwarded address itself. Its UART side goes out
-    // to sc_uart_tx_o/sc_uart_rx_i - the OTHER connected board's
-    // bb_master_core, not this board's own (see serial_2bus_top.v).
-    // ---------------------------------------------------------
     bb_slave_core u_bb_slave_core (
         .clk         (clk),
         .rst         (rst_n),

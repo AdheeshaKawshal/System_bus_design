@@ -1,37 +1,4 @@
 `timescale 1ns / 1ps
-//////////////////////////////////////////////////////////////////////////////////
-// Company:
-// Engineer:
-//
-// Create Date: 08/29/2026 10:40:53 AM
-// Design Name:
-// Module Name: slave_split
-// Project Name:
-// Target Devices:
-// Tool Versions:
-// Description:
-//   Same write behaviour as slave.v (mem[addr] <= wdata on a captured,
-//   selected write). A read, however, cannot be answered in one cycle:
-//   the slave asserts split_o for one cycle to tell the arbiter to park
-//   the current master and free the bus, waits WAIT_CYCLES fixed cycles,
-//   then (once mready_i says the parked/resumed master is actually ready)
-//   asserts resume_o for one cycle and shifts the read data back out on
-//   rdata_o_ser/rvalid_o so the arbiter re-grants the parked master and
-//   the transaction completes. mready_i is sampled only in RESUME - if
-//   it's already high the cycle WAIT_CYCLES elapses, this costs zero
-//   extra latency versus a plain fixed-cycle resume; if it's low, RESUME
-//   just holds an extra cycle at a time until it goes high.
-//
-// Dependencies:
-//
-// Revision:
-// Revision 0.01 - File Created
-// Additional Comments:
-//   Serial rewrite: request in as a shared 24-bit {addr,we,wdata} frame
-//   (addr_data_i/valid_i, gated by cs_i), response out via a Serializer
-//   instance on rdata_o_ser/rvalid_o - mirrors slave.v's mechanics.
-//
-//////////////////////////////////////////////////////////////////////////////////
 
 module slave_split #(
     parameter ADDR_W      = 12,
@@ -82,12 +49,13 @@ module slave_split #(
     );
 
     // FSM states
-    localparam IDLE     = 2'd0,
-               WAIT      = 2'd1,
-               RESUME    = 2'd2,
-               WAIT_LOW  = 2'd3; // wait for the master to drop cs_i before going back to IDLE
+    localparam IDLE         = 3'd0,
+               WAIT          = 3'd1,
+               RESUME_SEND   = 3'd2,  // fire resume_o unconditionally - this is what gets the master re-granted
+               RESUME_WAIT   = 3'd3,  // now wait for mready_i (only meaningful once granted) before responding
+               WAIT_LOW      = 3'd4;  // wait for the master to drop cs_i before going back to IDLE
 
-    reg [1:0] state;
+    reg [2:0] state;
     reg [$clog2(WAIT_CYCLES+1)-1:0] wait_cnt;
     reg [3:0] addr_latch;
     reg [DATA_W-1:0] rdata_reg;
@@ -131,18 +99,19 @@ module slave_split #(
                 WAIT: begin
                     // hold for WAIT_CYCLES fixed cycles before resuming
                     if (wait_cnt == WAIT_CYCLES - 1) begin
-                        state <= RESUME;
+                        state <= RESUME_SEND;
                     end else begin
                         wait_cnt <= wait_cnt + 1'b1;
                     end
                 end
 
-                RESUME: begin
-                    // Wait here (costing no extra cycles if mready_i is
-                    // already high) until the parked master is actually
-                    // ready to accept the response, then fire it.
+                RESUME_SEND: begin
+                    resume_o <= 1'b1;
+                    state    <= RESUME_WAIT;
+                end
+
+                RESUME_WAIT: begin
                     if (mready_i) begin
-                        resume_o    <= 1'b1;
                         rdata_reg   <= mem[addr_latch];
                         ser_trigger <= 1'b1;
                         state       <= WAIT_LOW;
@@ -150,11 +119,6 @@ module slave_split #(
                 end
 
                 WAIT_LOW: begin
-                    // The master only drops cs_i one cycle after seeing the
-                    // response start, so cs_i may still be asserted here.
-                    // Sit tight so we don't misread the stale cs_i as a
-                    // fresh request, and only return to IDLE once it
-                    // actually clears.
                     if (!cs_i) begin
                         state <= IDLE;
                     end

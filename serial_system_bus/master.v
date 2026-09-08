@@ -9,10 +9,6 @@ module master #(
 )(
     input wire clk,
     input wire rst,
-
-    // External packet select: chooses which entry in the transaction
-    // table (tx_ptr) is sent on the next request. Sampled when leaving
-    // IDLE to start a new request.
     input wire [3:0] pkt_sel_i,
     input wire  pkt_valid_i,
 
@@ -38,9 +34,6 @@ module master #(
     reg [31:0] delay_cnt;
     reg [31:0] timeout_cnt;   // cycles spent granted in ACTIVE (write hold only - a read just waits for rvalid)
 
-    // Transaction memory: type (we), addr, wdata and space to store read
-    // results. Indexed 1..NUM_TXN (not 0-based) so index 0 stays free as
-    // pkt_sel_i's "no selection" sentinel.
     reg [DATA_W-1:0] wdata_mem [1:NUM_TXN];
     reg [ADDR_W-1:0] addr_mem  [1:NUM_TXN];
     reg              we_mem    [1:NUM_TXN];
@@ -52,14 +45,7 @@ module master #(
     integer i;
 
     // This simple master model has no reason to ever refuse a response.
-    assign mready_o = 1'b1;
-
-    // ---------------------------------------------------------
-    // Outgoing request: one addr_serializer builds the {addr,we,wdata}
-    // frame and shifts it out on addr_data_o, self-timed once triggered.
-    // tx_start pulses for exactly one cycle on the REQUEST -> ACTIVE
-    // transition (i.e. the cycle grant_i is first seen).
-    // ---------------------------------------------------------
+    assign mready_o = grant_i;
     reg tx_start;
 
     addr_serializer #(
@@ -121,11 +107,6 @@ module master #(
             // 6: read  slave2 addr 0x001
             // 7: write slave2 addr 0x008 <- 0x44
             // 8: read  slave2 addr 0x008
-            // Address layout is {external_flag(1), slave_sel(2), slave_addr(12)}
-            // (see addr_redirect.v/addr_decoder.v) - external_flag must be 0
-            // for a genuine on-bus slave1/slave2 access, with slave_sel
-            // picking 00=slave1, 01=slave2. slave_addr below is the plain
-            // 0x001/0x005/0x008 named in the comments above.
             addr_mem[1]  <= 15'h4001; wdata_mem[1] <= 8'h03; we_mem[1] <= 1'b1;
             addr_mem[2]  <= 15'h4001; wdata_mem[2] <= {DATA_W{1'b0}}; we_mem[2] <= 1'b0;
             addr_mem[3]  <= 15'h2005; wdata_mem[3] <= 8'h02; we_mem[3] <= 1'b1;

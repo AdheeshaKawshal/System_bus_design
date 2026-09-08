@@ -34,20 +34,9 @@ module bb_master_core #(
     output wire                  mready_o,       // always ready for the response
 
     input  wire                  rdata_ser_i,    // serial rdata response frame, MSB first
-    input  wire                  rvalid_i,       // response frame-valid (held-high style)
-
-    // ---- observation ports ------------------------------------------------
-    output reg                   overflow_o,  // sticky: a 2nd packet landed on an already-held one
-    output wire                  frame_err_o  // sticky: a request frame was dropped on a bad stop bit
+    input  wire                  rvalid_i      // response frame-valid (held-high style)
 );
 
-    // ------------------------------------------------------------------
-    // Block 1: UART RX -> unpacked transaction fields
-    //
-    // uart_frame_rx (WIDTH = 24) hands over the whole frame at once, so all
-    // that is left here is slicing the fields out of it -- pure wiring, no
-    // state.
-    // ------------------------------------------------------------------
     wire [23:0] rx_frame;
     wire        pkt_ready;   // 1-cycle pulse: a whole request frame has arrived
 
@@ -60,8 +49,7 @@ module bb_master_core #(
         .rst         (rst),
         .rx_i        (uart_rx_i),
         .data_o      (rx_frame),
-        .valid_o     (pkt_ready),
-        .frame_err_o (frame_err_o)
+        .valid_o     (pkt_ready)
     );
 
     // rx_frame[23:16] = header {rw, 1'b0, addr[13:8]}
@@ -94,7 +82,6 @@ module bb_master_core #(
             hold_we    <= 1'b0;
             hold_addr  <= 14'h0;
             hold_wdata <= 8'h00;
-            overflow_o <= 1'b0;
         end else begin
             if (hold_consumed)
                 hold_valid <= 1'b0;
@@ -108,11 +95,7 @@ module bb_master_core #(
                     hold_we    <= pkt_we;
                     hold_addr  <= pkt_addr;
                     hold_wdata <= pkt_wdata;
-                end else begin
-                    // a transaction is already waiting and a second one just
-                    // landed on top of it: flag it, don't overwrite
-                    overflow_o <= 1'b1;   // sticky, only cleared by rst
-                end
+                end 
             end
         end
     end
@@ -174,7 +157,7 @@ module bb_master_core #(
     // addr_serializer - matching how the top-level master.v generates its
     // own tx_start pulse.
     // ------------------------------------------------------------------
-    assign mready_o = 1'b1;
+    assign mready_o = grant_i;
 
     reg valid_par_d;
     always @(posedge clk or negedge rst) begin

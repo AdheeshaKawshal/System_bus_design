@@ -213,10 +213,19 @@ module serial_system_bus #(
     // ---------------------------------------------------------
     // Each master's return path is just the (single) slave bus, gated by
     // that master's own grant so a parked master never sees the other
-    // master's transfers complete - except a split slave's resume pulse,
-    // which bypasses the grant gate for whichever master parked_id names
-    // (see arbiter.v's PARKED_* states). With no external bus there's only
-    // ever one source, so this is a plain gate, not a mux.
+    // master's transfers complete. With no external bus there's only ever
+    // one source, so this is a plain gate, not a mux.
+    //
+    // No resume-driven bypass here (deliberately removed): a split slave's
+    // resume_o only unlocks the arbiter (see arbiter.v's PARKED_* states,
+    // which re-grant purely on seeing resume) - it does NOT coincide with
+    // the response data anymore (see slave_split.v's RESUME_SEND/
+    // RESUME_WAIT split). The slave only actually drives its response
+    // (ser_trigger) once mready_i confirms the master is granted again, so
+    // grant_M0/grant_M1 is already correctly asserted by the time
+    // rvalid_slave goes high for real - a bypass here would (and did) let
+    // a master capture a premature, still-idle response as if it were
+    // real data.
     //
     // mready (from each master, forwarded to slaves as mready_bus above)
     // replaces the old per-slave ready entirely: a slave that needs more
@@ -227,7 +236,7 @@ module serial_system_bus #(
     assign rdata_M0_ser = rdata_slave_ser;
     assign rdata_M1_ser = rdata_slave_ser;
 
-    assign rvalid_M0 = (rvalid_slave && grant_M0) || (resume && !parked_id);
-    assign rvalid_M1 = (rvalid_slave && grant_M1) || (resume &&  parked_id);
+    assign rvalid_M0 = rvalid_slave && grant_M0;
+    assign rvalid_M1 = rvalid_slave && grant_M1;
 
 endmodule
