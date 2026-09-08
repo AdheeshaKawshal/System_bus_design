@@ -132,8 +132,8 @@ module master #(
             addr_mem[4]  <= 15'h2005; wdata_mem[4] <= {DATA_W{1'b0}}; we_mem[4] <= 1'b0;
             addr_mem[5]  <= 15'h0001; wdata_mem[5] <= 8'h04; we_mem[5] <= 1'b1;
             addr_mem[6]  <= 15'h0001; wdata_mem[6] <= {DATA_W{1'b0}}; we_mem[6] <= 1'b0;
-            addr_mem[7]  <= 15'h1008; wdata_mem[7] <= 8'h04; we_mem[7] <= 1'b1;
-            addr_mem[8]  <= 15'h1008; wdata_mem[8] <= {DATA_W{1'b0}}; we_mem[8] <= 1'b0;
+            addr_mem[7]  <= 15'h6008; wdata_mem[7] <= 8'h05; we_mem[7] <= 1'b1;
+            addr_mem[8]  <= 15'h6008; wdata_mem[8] <= {DATA_W{1'b0}}; we_mem[8] <= 1'b0;
 
         end else begin
             tx_start     <= 1'b0;
