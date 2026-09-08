@@ -12,12 +12,12 @@
 //   3'b100 -> slave3
 //   anything else (3'b101/110/111) -> addr_invalid
 //
-// There's no external/off-bus port anymore: an address whose external-flag
-// bit is set is routed to slave 3 (S2), which acts as the bridge/gateway
-// slave - same slave_sel3 a genuine 3'b100 internal access would get.
-// ext_redirect is the extra bit that tells slave 3 apart the two cases:
-// high only for the external-flag case, so the bridge slave knows to
-// forward this particular transaction on rather than service it itself.
+// An address whose external-flag bit (sel_bits' MSB, i.e. addr[14]) is set
+// is routed to its own dedicated select, ext_redirect, instead - the 3-bit
+// field is not even inspected in that case. ext_redirect is mutually
+// exclusive with slave_sel1/2/3 (never asserted alongside any of them), so
+// the external bridge slave (bb_slave_core) and the genuine internal
+// 3'b100 slave never collide on the same chip select.
 module addr_decoder #(
     parameter NUM_SLAVES = 3,
     parameter SEL_W      = 3,
@@ -45,7 +45,8 @@ module addr_decoder #(
 
         if (valid_i) begin
             if (is_external) begin
-                slave_sel    = 3'b100;  // external -> slave 3 (bridge/gateway)
+                // external (addr[14]=1) -> ext_redirect only; slave_sel
+                // stays all-zero so slave_sel1/2/3 never assert here.
                 ext_redirect = 1'b1;
             end else begin
                 casez (sel)

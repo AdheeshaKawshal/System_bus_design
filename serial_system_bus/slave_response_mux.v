@@ -11,6 +11,7 @@ module slave_response_mux #(
     input wire slave_sel1,
     input wire slave_sel2,
     input wire slave_sel3,
+    input wire ext_redirect,  // dedicated select for the external/bridge slave (S3) - mutually exclusive with slave_sel1/2/3
 
     input wire [DATA_W-1:0] rdata_S0,
     input wire               rvalid_S0,
@@ -21,18 +22,23 @@ module slave_response_mux #(
     input wire [DATA_W-1:0] rdata_S2,
     input wire               rvalid_S2,
 
+    input wire [DATA_W-1:0] rdata_S3,
+    input wire               rvalid_S3,
+
     output wire [DATA_W-1:0] rdata_slave,
     output wire               rvalid_slave
 );
 
-    assign rdata_slave  = slave_sel1 ? rdata_S0  :
-                           slave_sel2 ? rdata_S1  :
-                           slave_sel3 ? rdata_S2  :
+    assign rdata_slave  = slave_sel1   ? rdata_S0  :
+                           slave_sel2   ? rdata_S1  :
+                           slave_sel3   ? rdata_S2  :
+                           ext_redirect ? rdata_S3  :
                            {DATA_W{1'b0}};
 
-    assign rvalid_slave = slave_sel1 ? rvalid_S0 :
-                           slave_sel2 ? rvalid_S1 :
-                           slave_sel3 ? rvalid_S2 :
+    assign rvalid_slave = slave_sel1   ? rvalid_S0 :
+                           slave_sel2   ? rvalid_S1 :
+                           slave_sel3   ? rvalid_S2 :
+                           ext_redirect ? rvalid_S3 :
                            1'b0;
 
 endmodule

@@ -13,21 +13,14 @@
 // handshake anywhere in this design -- the bus takes only rdata + rvalid
 // back from a slave.
 //
-// addr_i[14] selects functionality:
-//
-//   0 = LOCAL  : serviced by the local 16-byte register file (bb_local_regfile
-//                in slavev2.v). Its addr_i port stays 11 bits wide (unchanged
-//                interface), but only 16 slots actually exist - only
-//                addr_i[3:0] is used to index, so addr_i[10:4] alias
-//                (the caller is expected to only ever address the low 16
-//                slots). A read answers with rvalid_o one cycle later; a
-//                write just happens.
-//
-//   1 = REMOTE : the transaction is packed into a single 24-bit UART frame and
-//                shipped out to a bb_master_core on the far side of the link. A
-//                remote WRITE is fire-and-forget -- nothing comes back and
-//                nothing is reported. A remote READ waits for the single
-//                reply byte and then pulses rvalid_o with it.
+// This core is purely a bridge now - it has no local register file of its
+// own. Every request that reaches it (cs_i is expected to be driven only by
+// the caller's dedicated external-flag select, e.g. ext_redirect in
+// addr_decoder.v/serial_bus_top.v - not one of the genuinely-internal
+// slave_selN lines) is packed into a single 24-bit UART frame and shipped
+// out to a bb_master_core on the far side of the link. A WRITE is
+// fire-and-forget -- nothing comes back and nothing is reported. A READ
+// waits for the single reply byte and then pulses rvalid_o with it.
 //
 // Packet layout sent on a REMOTE access -- one 24-bit frame, one start bit,
 // one stop bit (26 bit-times total, vs 30 for the same payload framed as
@@ -112,34 +105,11 @@ module bb_slave_core #(
         .frame_done  (frame_done)
     );
 
-    wire is_remote = addr_c[14];
-
-    // ------------------------------------------------------------------
-    // LOCAL path: the 2 KB register file. cs_i is tied high; selection is
-    // done entirely through frame_done, gated so it only pulses when this
-    // transaction is actually LOCAL.
-    // ------------------------------------------------------------------
-    wire [7:0] local_rdata;
-    wire       local_rvalid;
-
-    bb_local_regfile #(
-        .ADDR_W (11),      // port width unchanged; only 16 slots actually exist - see slavev2.v
-        .DATA_W (8)
-    ) u_local_slave (
-        .clk      (clk),
-        .rst      (rst),
-        .cs_i     (1'b1),
-        .valid_i  (frame_done & ~is_remote),
-        .we_i     (we_c),
-        .addr_i   (addr_c[10:0]),
-        .wdata_i  (wdata_c),
-        .rdata_o  (local_rdata),
-        .rvalid_o (local_rvalid)
-    );
-
     // ------------------------------------------------------------------
     // REMOTE path: request/reply FSM around uart_frame_tx (WIDTH=24) and
-    // uart_frame_rx (WIDTH=8, the reply byte on reads).
+    // uart_frame_rx (WIDTH=8, the reply byte on reads). Every frame that
+    // reaches this core goes out over the link - there is no local
+    // register file to service anything itself.
     // ------------------------------------------------------------------
     localparam R_IDLE       = 2'd0,
                R_SEND       = 2'd1,   // uart_frame_tx shifting the 24-bit packet out
@@ -209,7 +179,7 @@ module bb_slave_core #(
                     // No backpressure toward the bus: if the UART TX is
                     // still busy with a previous packet, this request is
                     // simply dropped (nothing to stall with).
-                    if (frame_done && is_remote && !tx_busy) begin
+                    if (frame_done && !tx_busy) begin
                         tx_data      <= pkt;
                         r_we_latched <= we_c;
                         tx_send      <= 1'b1;
@@ -249,20 +219,14 @@ module bb_slave_core #(
     end
 
     // ------------------------------------------------------------------
-    // Output mux + serializer. Only one path can be pulsing valid on a
-    // given cycle: a remote reply arrives hundreds of cycles after the
-    // access that triggered it, long after any local access has answered.
-    // The muxed byte/trigger feeds a Serializer, same as slave.v's own
-    // response path, turning it into the serial rdata_o_ser/rvalid_o pair.
+    // Serializer: turns the remote reply byte into the serial
+    // rdata_o_ser/rvalid_o pair, same as slave.v's own response path.
     // ------------------------------------------------------------------
-    wire       ser_trigger = local_rvalid | r_rvalid;
-    (* MARK_DEBUG = "TRUE" *) wire [7:0] ser_data    = r_rvalid ? r_rdata : local_rdata;
-
     Serializer u_serializer (
         .clk_in         (clk),
         .rst_n          (rst),
-        .data_in        (ser_data),
-        .data_valid     (ser_trigger),
+        .data_in        (r_rdata),
+        .data_valid     (r_rvalid),
         .serial_out     (rdata_o_ser),
         .data_valid_out (rvalid_o),
         .done           ()

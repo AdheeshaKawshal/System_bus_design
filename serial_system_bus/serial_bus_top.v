@@ -108,6 +108,7 @@ module serial_bus_top #(
     wire rdata_S0_ser, rvalid_S0;
     wire rdata_S1_ser, rvalid_S1;
     wire rdata_S2_ser, rvalid_S2;
+    wire rdata_S3_ser, rvalid_S3;
     wire split, resume;
 
     serial_system_bus #(
@@ -154,7 +155,10 @@ module serial_bus_top #(
         .rdata_S2_ser (rdata_S2_ser),
         .rvalid_S2    (rvalid_S2),
         .split        (split),
-        .resume       (resume)
+        .resume       (resume),
+
+        .rdata_S3_ser (rdata_S3_ser),
+        .rvalid_S3    (rvalid_S3)
     );
 
     // ---------------------------------------------------------
@@ -220,23 +224,44 @@ module serial_bus_top #(
     );
 
     // ---------------------------------------------------------
-    // Slave 2 (slave_sel3): dedicated to bb_slave_core - nothing else
-    // shares this select anymore. ext_redirect is no longer consumed here;
-    // bb_slave_core derives its own LOCAL/REMOTE split from bit 14 of the
-    // forwarded address instead (the same bit addr_decoder used to route
-    // here in the first place). Its UART side goes out to sc_uart_tx_o/
-    // sc_uart_rx_i - the OTHER connected board's bb_master_core, not this
-    // board's own (see serial_2bus_top.v).
+    // Slave 2 (slave_sel3): plain, genuinely internal - the 3-bit select
+    // field is only ever consulted when the external-flag bit (addr[14])
+    // is 0 (see addr_decoder.v), so this never collides with the
+    // external/bridge path below.
+    // ---------------------------------------------------------
+    slave #(
+        .ADDR_W (12),
+        .DATA_W (DATA_W),
+        .RW     (RW)
+    ) u_slave2 (
+        .clk         (clk),
+        .rst         (rst_n),
+        .cs_i        (slave_sel3),
+        .addr_data_i (addr_data_bus),
+        .valid_i     (valid_bus),
+        .rdata_o_ser (rdata_S2_ser),
+        .rvalid_o    (rvalid_S2)
+    );
+
+    // ---------------------------------------------------------
+    // External/bridge slave: its own dedicated select, ext_redirect - set
+    // only when addr[14] (the external-flag bit) is 1, in which case the
+    // 3-bit slave_sel field is never even inspected (see addr_decoder.v).
+    // So this is fully independent of slave_sel1/2/3 above, not layered on
+    // top of any of them. bb_slave_core derives its own LOCAL/REMOTE split
+    // from bit 14 of the forwarded address itself. Its UART side goes out
+    // to sc_uart_tx_o/sc_uart_rx_i - the OTHER connected board's
+    // bb_master_core, not this board's own (see serial_2bus_top.v).
     // ---------------------------------------------------------
     bb_slave_core u_bb_slave_core (
         .clk         (clk),
         .rst         (rst_n),
 
-        .cs_i        (slave_sel3),
+        .cs_i        (ext_redirect),
         .addr_data_i (addr_data_bus),
         .valid_i     (valid_bus),
-        .rdata_o_ser (rdata_S2_ser),
-        .rvalid_o    (rvalid_S2),
+        .rdata_o_ser (rdata_S3_ser),
+        .rvalid_o    (rvalid_S3),
 
         .uart_tx_o   (sc_uart_tx_o),
         .uart_rx_i   (sc_uart_rx_i),

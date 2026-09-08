@@ -52,7 +52,10 @@ module serial_system_bus #(
     input  wire  rdata_S2_ser,   // split-transaction slave
     input  wire  rvalid_S2,
     input  wire  split,       // from slave S2
-    input  wire  resume       // from slave S2
+    input  wire  resume,      // from slave S2
+
+    input  wire  rdata_S3_ser,   // external/bridge slave (bb_slave_core), selected by ext_redirect - not slave_sel3
+    input  wire  rvalid_S3
 );
 
     wire addr_sel, data_sel, ctr_sel;
@@ -186,9 +189,10 @@ module serial_system_bus #(
     slave_response_mux #(
         .DATA_W (1)
     ) u_slave_response_mux (
-        .slave_sel1 (slave_sel1),
-        .slave_sel2 (slave_sel2),
-        .slave_sel3 (slave_sel3),
+        .slave_sel1   (slave_sel1),
+        .slave_sel2   (slave_sel2),
+        .slave_sel3   (slave_sel3),
+        .ext_redirect (ext_redirect),
 
         .rdata_S0  (rdata_S0_ser),
         .rvalid_S0 (rvalid_S0),
@@ -198,6 +202,9 @@ module serial_system_bus #(
 
         .rdata_S2  (rdata_S2_ser),
         .rvalid_S2 (rvalid_S2),
+
+        .rdata_S3  (rdata_S3_ser),
+        .rvalid_S3 (rvalid_S3),
 
         .rdata_slave  (rdata_slave_ser),
         .rvalid_slave (rvalid_slave)
